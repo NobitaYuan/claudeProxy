@@ -72,7 +72,7 @@ src/
 - Claude Code 在请求的 `metadata.user_id` 中传入 JSON：`{ device_id, account_uuid, session_id }`
 - 同一 session_id 绑定到同一个 API Key（因为 prompt cache 按 key 隔离，切 key 后 cache 失效）
 - 新 session 分配到当前绑定 session 数最少的 active 账户
-- 分配时跳过配额占用 >90% 的 key，同绑定数时优先选配额占用更低的 key
+- 分配时配额差距 >5% 按配额选（优先低占用），≤5% 按 session 数选（优先少绑定）
 - 所有 key 都 >90% 时退回原逻辑（仍按绑定数分配）
 - 账户 429 时进入冷却期（默认 60s，或用 retry-after 头），已绑定该账户的 session 临时解绑重新分配
 - 请求失败（429 或网络异常）最多重试 3 次（MAX_RETRIES）

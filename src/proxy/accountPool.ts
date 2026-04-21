@@ -121,46 +121,30 @@ export class AccountPool {
     }
   }
 
-  /** 找到当前绑定 session 数最少的 active 账户（跳过配额 >90% 的 key） */
+  /** 选配额占用最低的 active 账户；配额差距 ≤5% 时按绑定 session 数分配 */
   private leastLoadedAccount(): Account | null {
     const sessionCounts = new Array(this.accounts.length).fill(0) as number[];
     for (const binding of this.sessionBindings.values()) {
       sessionCounts[binding.accountIndex]++;
     }
 
-    // 先尝试排除配额 >90% 的 key
-    const isQuotaExceeded = (acc: Account) => {
-      const pct = this.quotaHints.get(acc.index);
-      return pct !== undefined && pct > 90;
-    };
-
     let best: Account | null = null;
     let bestCount = Infinity;
     let bestQuota = Infinity;
-    let anyCandidate = false;
     for (const acc of this.accounts) {
-      if (acc.status !== 'active' || isQuotaExceeded(acc)) continue;
-      anyCandidate = true;
+      if (acc.status !== 'active') continue;
       const count = sessionCounts[acc.index];
       const quota = this.quotaHints.get(acc.index) ?? 0;
-      if (count < bestCount || (count === bestCount && quota < bestQuota)) {
-        best = acc;
-        bestCount = count;
-        bestQuota = quota;
-      }
-    }
 
-    // 所有 key 都 >90%，退回原逻辑
-    if (!anyCandidate) {
-      for (const acc of this.accounts) {
-        if (acc.status !== 'active') continue;
-        const count = sessionCounts[acc.index];
-        const quota = this.quotaHints.get(acc.index) ?? 0;
-        if (count < bestCount || (count === bestCount && quota < bestQuota)) {
-          best = acc;
-          bestCount = count;
-          bestQuota = quota;
-        }
+      if (best === null) { best = acc; bestCount = count; bestQuota = quota; continue; }
+
+      const quotaDiff = Math.abs(quota - bestQuota);
+      if (quotaDiff > 5) {
+        // 配额差距明显，选配额占用更低的
+        if (quota < bestQuota) { best = acc; bestCount = count; bestQuota = quota; }
+      } else {
+        // 配额接近，选 session 数更少的
+        if (count < bestCount) { best = acc; bestCount = count; bestQuota = quota; }
       }
     }
     return best;

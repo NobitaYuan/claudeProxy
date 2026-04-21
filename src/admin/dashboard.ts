@@ -76,8 +76,8 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
   /* 配额进度条 */
   .quota-row { margin-bottom: 8px; }
   .quota-row:last-child { margin-bottom: 0; }
-  .quota-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); margin-bottom: 3px; }
-  .quota-bar { height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
+  .quota-label { display: flex; justify-content: space-between; font-size: 14px; color: var(--text-dim); margin-bottom: 3px; }
+  .quota-bar { height: 8px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
   .quota-fill { height: 100%; border-radius: 3px; transition: width .4s ease; }
   .quota-fill.green { background: var(--success); }
   .quota-fill.orange { background: var(--warning); }
@@ -344,7 +344,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
         : '<span class="badge badge-cooldown">冷却中</span>';
       const q = a.quotas || {};
       const quotasHtml = buildQuotaBars([
-        { label: '5h Token', pct: q.fiveHour },
+        { label: '5小时 Token', pct: q.fiveHour },
         { label: '周度 Token', pct: q.weekly },
         { label: '月度 MCP', pct: q.monthly },
       ]);
