@@ -72,11 +72,11 @@ export class UsageTracker {
     const db = getDb();
     return db.prepare(`
       SELECT
-        DATE(created_at, 'localtime') as date,
+        DATE(created_at) as date,
         COUNT(*) as total_requests
       FROM requests
       WHERE created_at >= datetime('now', '-' || ? || ' days', 'localtime')
-      GROUP BY DATE(created_at, 'localtime')
+      GROUP BY DATE(created_at)
       ORDER BY date DESC
     `).all(days);
   }

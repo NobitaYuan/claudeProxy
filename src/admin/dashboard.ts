@@ -31,7 +31,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
   /* 登录遮罩 */
   #login-overlay { position: fixed; inset: 0; background: var(--overlay-bg); display: flex; align-items: center; justify-content: center; z-index: 100; }
   #login-overlay.hidden { display: none; }
-  .login-card { background: var(--bg-card); padding: 32px; border-radius: 12px; width: 380px; box-shadow: 0 8px 32px var(--shadow); }
+  .login-card { background: var(--bg-card); padding: 32px; border-radius: 12px; width: 400px; box-shadow: 0 8px 32px var(--shadow); }
   .login-card h2 { text-align: center; margin-bottom: 24px; font-size: 18px; }
   .login-card input { width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 14px; outline: none; }
   .login-card input:focus { border-color: var(--accent); }
