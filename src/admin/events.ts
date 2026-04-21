@@ -6,13 +6,17 @@ export interface ProxyEvent {
   accountIndex: number;
   clientIp: string;
   model: string;
+  sessionId: string;
+  type: 'bind' | 'request';
+  statusCode: number;
+  contentTypes: string[];
 }
 
 class DashboardEventBus {
   private emitter = new EventEmitter();
   private clients: Set<{ write: (data: string) => void }> = new Set();
 
-  /** 代理请求完成时调用，广播给所有 SSE 客户端 */
+  /** 广播事件给所有 SSE 客户端 */
   emitProxyEvent(event: ProxyEvent) {
     const data = JSON.stringify(event);
     for (const client of this.clients) {

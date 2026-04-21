@@ -30,14 +30,14 @@ src/
 ├── config.ts          # 环境变量配置
 ├── proxy/
 │   ├── handler.ts     # 流式代理核心（SSE 转发、429 重试、usage 提取）
-│   └── accountPool.ts # 账户池（session 粘性绑定、最少绑定数分配、冷却）
+│   └── accountPool.ts # 账户池（session 粘性绑定、最少绑定数分配、配额感知调度、过期清理）
 ├── stats/
 │   ├── db.ts          # SQLite 初始化（requests + calibrations 表）
 │   ├── tracker.ts     # 本地用量记录和查询（统一 token 计数）
-│   └── calibrator.ts  # 定时拉取上游真实用量和配额（30 分钟一次）
+│   └── calibrator.ts  # 定时拉取上游真实用量和配额（30 分钟一次，按 key 并发）
 └── admin/
     ├── routes.ts      # 管理 API（账户状态、用量统计、校准数据）
-    ├── dashboard.ts   # 管理面板 HTML（主题切换、实时日志抽屉、ECharts 图表）
+    ├── dashboard.ts   # 管理面板 HTML（主题切换、实时日志抽屉、Chart.js 图表）
     └── events.ts      # SSE 事件总线（实时推送代理请求）
 ```
 
@@ -67,27 +67,29 @@ src/
 
 ## 负载均衡策略
 
-当前采用 **session 粘性绑定**：
-- Claude Code 在请求的 `metadata.user_id` 中传入 JSON：`{ device_id, account_uuid, session_id }`
-- 同一 session_id 绑定到同一个 API Key（因为 prompt cache 按 key 绑定）
-- 新 session 分配到当前绑定数最少的 active 账户
-- 账户 429 时进入冷却期，已绑定该账户的 session 临时解绑重新分配
+三层调度：session 粘性绑定 → 最少绑定数分配 → 配额感知调度。
 
-**已知约束**:
-- GLM 的 Anthropic 兼容 prompt caching 按 API Key 隔离，切 key 后 cache 失效
-- 目前 Calibrator 只用第一个 key 查询配额，多 key 场景下每个 key 的配额可能不同
-- 后续可利用配额数据做更智能的调度（如避开即将耗尽配额的 key）
+- Claude Code 在请求的 `metadata.user_id` 中传入 JSON：`{ device_id, account_uuid, session_id }`
+- 同一 session_id 绑定到同一个 API Key（因为 prompt cache 按 key 隔离，切 key 后 cache 失效）
+- 新 session 分配到当前绑定 session 数最少的 active 账户
+- 分配时跳过配额占用 >90% 的 key，同绑定数时优先选配额占用更低的 key
+- 所有 key 都 >90% 时退回原逻辑（仍按绑定数分配）
+- 账户 429 时进入冷却期（默认 60s，或用 retry-after 头），已绑定该账户的 session 临时解绑重新分配
+- 请求失败（429 或网络异常）最多重试 3 次（MAX_RETRIES）
+- Session 过期清理：每 5 分钟扫描，超过 `SESSION_TIMEOUT_MS`（默认 30 分钟）无请求的绑定自动清除
+
+配额数据由 Calibrator 每 30 分钟按 key 并发拉取，取每个 key 最高配额百分比回注到 AccountPool。
 
 ## Token 统计方式
 
-- 本地统计：从 SSE 流中提取 `message_start.usage.input_tokens` + `message_delta.usage.output_tokens` 合并为单一 token 计数
-- 上游数据：每 30 分钟拉取今日 00:00 至当前的 `totalTokensUsage` 和 `totalModelCallCount`
+- 本地统计：记录每个请求的 client_ip、model、account_key_index、status_code（已移除本地 token 提取，SSE 流直接透传不做解析）
+- 上游数据：Calibrator 每 30 分钟按 key 拉取今日 00:00 至当前的 `totalTokensUsage` 和 `totalModelCallCount`
 - 两者独立展示，不做校准/换算
 
 ## 数据库表结构
 
-- **requests**: `id, client_ip, model, account_key_index, tokens, status_code, created_at`
-- **calibrations**: `id, date, upstream_tokens, upstream_calls, quotas(JSON), created_at`
+- **requests**: `id, client_ip, model, account_key_index, status_code, created_at`
+- **calibrations**: `id, date, account_key_index, upstream_tokens, upstream_calls, quotas(JSON), created_at`，UNIQUE(date, account_key_index)
 
 ## Claude Code 请求格式
 

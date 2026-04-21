@@ -118,7 +118,7 @@ export class Calibrator {
     if (hints.size > 0 && this.onQuotaUpdate) {
       this.onQuotaUpdate(hints);
     }
-    console.log(`[Calibrator] 上游数据已更新 | ${dateStr} | ${successCount}/${this.keys.length} 个 key 成功 | 配额: ${[...hints.entries()].map(([k, v]) => `#${k}=${v.toFixed(1)}%`).join(', ') || '无数据'}`);
+    console.log(`[Calibrator] 上游数据已更新 | ${dateStr} | ${successCount}/${this.keys.length} 个 key 成功`);
   }
 
   private async fetchForKey(apiKey: string, index: number, start: Date, end: Date): Promise<KeyUpstreamData | null> {

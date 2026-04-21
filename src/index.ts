@@ -31,6 +31,7 @@ function getLocalIPs(): string[] {
 initDb();
 const tracker = new UsageTracker();
 const pool = new AccountPool();
+pool.start();
 const calibrator = new Calibrator();
 calibrator.onQuotaChange((hints) => pool.setQuotaHints(hints));
 calibrator.start();

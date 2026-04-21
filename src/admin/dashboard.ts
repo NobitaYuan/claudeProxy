@@ -112,7 +112,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
   .drawer-toggle { flex-shrink: 0; background: var(--accent); color: #fff; border: none; border-radius: var(--radius) 0 0 var(--radius); padding: 12px 6px; font-size: 12px; writing-mode: vertical-lr; cursor: pointer; letter-spacing: 2px; transition: background .15s; align-self: center; }
   .drawer-toggle:hover { background: var(--accent-hover); }
   .drawer { width: 0; overflow: hidden; background: var(--bg-card); border-left: 1px solid var(--border); transition: width .3s; display: flex; flex-direction: column; flex-shrink: 0; }
-  .drawer.open { width: 360px; }
+  .drawer.open { width: 380px; }
   .drawer-header { padding: 16px; border-bottom: 1px solid var(--border); font-size: 15px; font-weight: 600; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
   .drawer-body { flex: 1; overflow-y: auto; padding: 8px 16px; }
   .log-list { font-size: 13px; font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace; }
@@ -449,17 +449,23 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
     state.es.onerror = () => { state.es = null; };
   }
 
-  // 请求日志流（保留最近 30 条）
+  // 请求日志流（保留最近 50 条）
   function appendLog(ev) {
     const list = $('#log-list');
     const now = new Date();
     const ts = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0') + ':' + now.getSeconds().toString().padStart(2,'0');
     const entry = document.createElement('div');
     entry.className = 'log-entry';
-    entry.innerHTML = '<span class="log-time">' + ts + '</span><span class="log-body">' + ev.clientIp + ' | ' + ev.model + ' | 账户#' + ev.accountIndex + '</span>';
+    if (ev.type === 'bind') {
+      entry.innerHTML = '<span class="log-time">' + ts + '</span><span class="log-body" style="color:var(--accent)">[新建] #' + ev.accountIndex + ' ' + ev.clientIp + '</span>';
+    } else {
+      const isError = ev.statusCode >= 400;
+      const color = isError ? 'var(--danger)' : 'var(--text)';
+      entry.innerHTML = '<span class="log-time">' + ts + '</span><span class="log-body" style="color:' + color + '">[请求:' + ev.statusCode + '] #' + ev.accountIndex + ' ' + ev.clientIp + ' ' + ev.model + '</span>';
+    }
     list.prepend(entry);
     state.logCount++;
-    while (state.logCount > 30) { list.removeChild(list.lastChild); state.logCount--; }
+    while (state.logCount > 50) { list.removeChild(list.lastChild); state.logCount--; }
   }
 
   // 初始化
