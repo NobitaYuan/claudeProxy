@@ -61,6 +61,19 @@ export class UsageTracker {
     `).get(days);
   }
 
+  /** Get usage grouped by account (all-time) */
+  getUsageByAccount() {
+    const db = getDb();
+    return db.prepare(`
+      SELECT
+        account_key_index as accountIndex,
+        COUNT(*) as totalRequests,
+        SUM(input_tokens) + SUM(output_tokens) as totalTokens
+      FROM requests
+      GROUP BY account_key_index
+    `).all() as { accountIndex: number; totalRequests: number; totalTokens: number }[];
+  }
+
   /** Get daily breakdown */
   getDailyBreakdown(days = 7) {
     const db = getDb();

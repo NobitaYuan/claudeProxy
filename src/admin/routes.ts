@@ -6,7 +6,7 @@ import { config } from '../config.js';
 export function createAdminRoutes(pool: AccountPool, tracker: UsageTracker) {
   const admin = new Hono();
 
-  // Admin auth middleware
+  // API 认证中间件
   admin.use('*', async (c, next) => {
     const token = c.req.header('authorization')?.replace('Bearer ', '');
     if (!token || token !== config.adminToken) {
@@ -17,7 +17,15 @@ export function createAdminRoutes(pool: AccountPool, tracker: UsageTracker) {
 
   // Account pool status
   admin.get('/accounts', (c) => {
-    return c.json({ accounts: pool.getStatus() });
+    const accounts = pool.getStatus();
+    const usage = tracker.getUsageByAccount();
+    const usageMap = new Map(usage.map(u => [u.accountIndex, u]));
+    const merged = accounts.map(a => ({
+      ...a,
+      requestCount: usageMap.get(a.index)?.totalRequests ?? 0,
+      tokenUsed: usageMap.get(a.index)?.totalTokens ?? 0,
+    }));
+    return c.json({ accounts: merged });
   });
 
   // Usage by client IP

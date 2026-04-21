@@ -7,6 +7,8 @@ import { createProxyHandler } from './proxy/handler.js';
 import { initDb } from './stats/db.js';
 import { UsageTracker } from './stats/tracker.js';
 import { createAdminRoutes } from './admin/routes.js';
+import { DASHBOARD_HTML } from './admin/dashboard.js';
+import { eventBus } from './admin/events.js';
 
 type Env = { Variables: { clientIp: string } };
 
@@ -43,7 +45,12 @@ app.use('*', async (c, next) => {
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', accounts: config.glmApiKeys.length }));
 
-// Admin routes
+// 管理面板页面（无需认证）
+app.get('/admin/dashboard', (c) => c.html(DASHBOARD_HTML));
+app.get('/admin/', (c) => c.redirect('/admin/dashboard'));
+app.get('/admin/events', (c) => eventBus.handler(c));
+
+// Admin API routes
 app.route('/admin', createAdminRoutes(pool, tracker));
 
 // Proxy: forward all /v1/* requests
@@ -57,6 +64,11 @@ console.log(`  Port:     ${config.port}`);
 console.log(`  Accounts: ${config.glmApiKeys.length}`);
 console.log(`  Upstream: ${config.glmApiBase}`);
 console.log(`  IPs:      ${ips.join(', ')}`);
+console.log('');
+console.log('Dashboard:');
+for (const ip of ips) {
+  console.log(`  http://${ip}:${config.port}/admin/dashboard`);
+}
 console.log('');
 console.log('Claude Code config for employees:');
 for (const ip of ips) {

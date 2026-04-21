@@ -1,0 +1,463 @@
+export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClaudeProxy 管理面板</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --bg-card: #1a1d27; --bg-hover: #242736;
+    --text: #e1e4ed; --text-dim: #8b8fa3;
+    --accent: #6c8cff; --accent-hover: #5a78e6;
+    --border: #2a2d3a; --success: #34d399; --warning: #fbbf24; --danger: #f87171;
+    --overlay-bg: rgba(0,0,0,.7); --shadow: rgba(0,0,0,.4);
+    --radius: 8px;
+  }
+  :root.light {
+    --bg: #f4f5f7; --bg-card: #ffffff; --bg-hover: #ebedf0;
+    --text: #1a1d27; --text-dim: #6b7280;
+    --accent: #4f6ef7; --accent-hover: #3b5de6;
+    --border: #d1d5db; --success: #059669; --warning: #d97706; --danger: #dc2626;
+    --overlay-bg: rgba(0,0,0,.3); --shadow: rgba(0,0,0,.1);
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  .header { flex-shrink: 0; }
+  .main-row { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+  .main-content { flex: 1; min-width: 0; overflow-y: auto; }
+
+  /* 登录遮罩 */
+  #login-overlay { position: fixed; inset: 0; background: var(--overlay-bg); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  #login-overlay.hidden { display: none; }
+  .login-card { background: var(--bg-card); padding: 32px; border-radius: 12px; width: 360px; box-shadow: 0 8px 32px var(--shadow); }
+  .login-card h2 { text-align: center; margin-bottom: 24px; font-size: 18px; }
+  .login-card input { width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 14px; outline: none; }
+  .login-card input:focus { border-color: var(--accent); }
+  .login-card .error { color: var(--danger); font-size: 13px; margin-top: 8px; min-height: 20px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border: none; border-radius: var(--radius); font-size: 14px; cursor: pointer; transition: background .15s; }
+  .btn-primary { background: var(--accent); color: #fff; width: 100%; margin-top: 12px; padding: 10px; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
+
+  /* 头部 */
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header-controls { display: flex; align-items: center; gap: 10px; }
+  .header-controls select, .header-controls button { font-size: 13px; }
+  .header-controls select { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px; outline: none; }
+
+  /* 主内容 */
+  .container { max-width: 1200px; margin: 0 auto; padding: 20px 24px; }
+
+  /* 汇总卡片 */
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+  .card { background: var(--bg-card); border-radius: var(--radius); padding: 20px; border: 1px solid var(--border); }
+  .card-label { font-size: 13px; color: var(--text-dim); margin-bottom: 8px; }
+  .card-value { font-size: 28px; font-weight: 700; }
+
+  /* 图表区 */
+  .chart-card { background: var(--bg-card); border-radius: var(--radius); padding: 20px; border: 1px solid var(--border); margin-bottom: 20px; }
+  .chart-card h3 { font-size: 15px; margin-bottom: 12px; font-weight: 600; }
+  .chart-wrapper { position: relative; height: 280px; }
+  .hidden { display: none !important; }
+  .chart-fallback { color: var(--text-dim); text-align: center; padding: 40px 0; font-size: 14px; }
+
+  /* 双栏布局 */
+  .tables-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .table-card { background: var(--bg-card); border-radius: var(--radius); padding: 20px; border: 1px solid var(--border); overflow-x: auto; }
+  .table-card h3 { font-size: 15px; margin-bottom: 12px; font-weight: 600; }
+
+  /* 表格 */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; white-space: nowrap; }
+  th { color: var(--text-dim); font-weight: 500; border-bottom: 1px solid var(--border); }
+  tr:hover td { background: var(--bg-hover); }
+
+  /* 状态标签 */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; }
+  .badge-active { background: rgba(52,211,153,.15); color: var(--success); }
+  .badge-cooldown { background: rgba(251,191,36,.15); color: var(--warning); }
+
+  /* 页脚 */
+  .footer { text-align: center; color: var(--text-dim); font-size: 13px; padding: 12px; }
+
+  /* 日志抽屉 — flex 子元素，推开主内容 */
+  .drawer-toggle { flex-shrink: 0; background: var(--accent); color: #fff; border: none; border-radius: var(--radius) 0 0 var(--radius); padding: 12px 6px; font-size: 12px; writing-mode: vertical-lr; cursor: pointer; letter-spacing: 2px; transition: background .15s; align-self: center; }
+  .drawer-toggle:hover { background: var(--accent-hover); }
+  .drawer { width: 0; overflow: hidden; background: var(--bg-card); border-left: 1px solid var(--border); transition: width .3s; display: flex; flex-direction: column; flex-shrink: 0; }
+  .drawer.open { width: 340px; }
+  .drawer-header { padding: 16px; border-bottom: 1px solid var(--border); font-size: 15px; font-weight: 600; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
+  .drawer-body { flex: 1; overflow-y: auto; padding: 8px 16px; }
+  .log-list { font-size: 13px; font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace; }
+  .log-entry { padding: 6px 0; border-bottom: 1px solid var(--border); animation: fadeIn .3s ease; display: flex; gap: 8px; }
+  .log-entry:last-child { border-bottom: none; }
+  .log-time { color: var(--text-dim); flex-shrink: 0; }
+  .log-body { color: var(--text); word-break: break-all; }
+  .log-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; background: var(--accent); color: #fff; margin-left: 4px; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* 加载状态 */
+  .loading { text-align: center; padding: 40px; color: var(--text-dim); }
+
+  /* 响应式 */
+  @media (max-width: 900px) {
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    .tables-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 500px) {
+    .summary-grid { grid-template-columns: 1fr; }
+    .header { flex-direction: column; gap: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 登录遮罩 -->
+<div id="login-overlay">
+  <div class="login-card">
+    <h2>ClaudeProxy 管理面板</h2>
+    <input type="password" id="token-input" placeholder="输入 Admin Token" autocomplete="off">
+    <div class="error" id="login-error"></div>
+    <button class="btn btn-primary" id="login-btn">登录</button>
+  </div>
+</div>
+
+<!-- 主面板 -->
+<div id="app" style="display:none">
+  <div class="header">
+    <h1>ClaudeProxy 管理面板</h1>
+    <div class="header-controls">
+      <select id="refresh-interval">
+        <option value="15">15s 刷新</option>
+        <option value="30" selected>30s 刷新</option>
+        <option value="60">60s 刷新</option>
+        <option value="0">手动</option>
+      </select>
+      <button class="btn btn-ghost" id="theme-btn" title="切换主题">🌙</button>
+      <button class="btn btn-ghost" id="refresh-btn">刷新</button>
+      <button class="btn btn-ghost" id="log-btn" title="请求日志">日志</button>
+      <button class="btn btn-ghost" id="logout-btn">退出</button>
+    </div>
+  </div>
+  <div class="main-row">
+    <div class="main-content">
+      <div class="container">
+        <div class="summary-grid" id="summary-cards">
+          <div class="card"><div class="card-label">总请求数</div><div class="card-value" id="s-requests">-</div></div>
+          <div class="card"><div class="card-label">总输入 Token</div><div class="card-value" id="s-input">-</div></div>
+          <div class="card"><div class="card-label">总输出 Token</div><div class="card-value" id="s-output">-</div></div>
+          <div class="card"><div class="card-label">独立客户端</div><div class="card-value" id="s-clients">-</div></div>
+        </div>
+        <div class="chart-card">
+          <h3>每日趋势</h3>
+          <div id="chart-container">
+            <div class="chart-wrapper"><canvas id="daily-chart"></canvas></div>
+            <div class="chart-fallback hidden" id="chart-fallback">图表加载失败，请检查网络连接</div>
+          </div>
+        </div>
+        <div class="tables-grid">
+          <div class="table-card">
+            <h3>账户池状态</h3>
+            <table>
+              <thead><tr><th>#</th><th>状态</th><th>Sessions</th><th>请求数</th><th>Token 用量</th><th>Key 后缀</th><th>冷却</th></tr></thead>
+              <tbody id="accounts-tbody"></tbody>
+            </table>
+          </div>
+          <div class="table-card">
+            <h3>客户端用量统计</h3>
+            <table>
+              <thead><tr><th>IP</th><th>请求数</th><th>输入 Token</th><th>输出 Token</th><th>最后请求</th></tr></thead>
+              <tbody id="usage-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="footer" id="footer">最后刷新: -</div>
+    </div>
+    <button class="drawer-toggle" id="drawer-toggle">请求日志</button>
+    <div class="drawer" id="drawer">
+      <div class="drawer-header">实时请求日志 <span id="log-count" style="font-weight:400;font-size:12px;color:var(--text-dim)"></span></div>
+      <div class="drawer-body"><div class="log-list" id="log-list"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const $ = (s) => document.querySelector(s);
+  const state = { token: localStorage.getItem('admin_token') || '', timerId: null, cooldownTimer: null, accounts: [], es: null, logCount: 0 };
+  let dailyChart = null;
+
+  // 主题切换
+  const chartColors = {
+    dark: { text: '#8b8fa3', grid: '#2a2d3a' },
+    light: { text: '#6b7280', grid: '#e5e7eb' },
+  };
+  function isLight() { return document.documentElement.classList.contains('light'); }
+  function applyTheme(light) {
+    document.documentElement.classList.toggle('light', light);
+    $('#theme-btn').textContent = light ? '☀️' : '🌙';
+    localStorage.setItem('theme', light ? 'light' : 'dark');
+    updateChartTheme();
+  }
+  function updateChartTheme() {
+    if (!dailyChart) return;
+    const c = isLight() ? chartColors.light : chartColors.dark;
+    dailyChart.options.plugins.legend.labels.color = c.text;
+    dailyChart.options.scales.x.ticks.color = c.text;
+    dailyChart.options.scales.x.grid.color = c.grid;
+    dailyChart.options.scales.y.ticks.color = c.text;
+    dailyChart.options.scales.y.title.color = c.text;
+    dailyChart.options.scales.y.grid.color = c.grid;
+    dailyChart.options.scales.y1.ticks.color = c.text;
+    dailyChart.options.scales.y1.title.color = c.text;
+    dailyChart.update('none');
+  }
+  applyTheme(localStorage.getItem('theme') === 'light');
+  $('#theme-btn').addEventListener('click', () => applyTheme(!isLight()));
+
+  // 日志抽屉
+  const drawer = $('#drawer');
+  function toggleDrawer() { drawer.classList.toggle('open'); }
+  $('#drawer-toggle').addEventListener('click', toggleDrawer);
+  $('#log-btn').addEventListener('click', toggleDrawer);
+
+  // 数字格式化
+  function fmt(n) {
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  // 时间格式化
+  function fmtTime(iso) {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    return (d.getMonth()+1).toString().padStart(2,'0') + '-' + d.getDate().toString().padStart(2,'0') + ' ' +
+      d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+  }
+
+  function fmtNow() {
+    const d = new Date();
+    return d.getFullYear() + '-' + (d.getMonth()+1).toString().padStart(2,'0') + '-' + d.getDate().toString().padStart(2,'0') + ' ' +
+      d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0') + ':' + d.getSeconds().toString().padStart(2,'0');
+  }
+
+  // API 请求
+  async function api(path) {
+    const res = await fetch(path, { headers: { 'Authorization': 'Bearer ' + state.token } });
+    if (res.status === 401) throw new Error('unauthorized');
+    if (!res.ok) throw new Error('请求失败: ' + res.status);
+    return res.json();
+  }
+
+  // 登录
+  function showLogin(msg) {
+    $('#login-overlay').classList.remove('hidden');
+    $('#app').style.display = 'none';
+    $('#login-error').textContent = msg || '';
+    stopAutoRefresh();
+  }
+  function hideLogin() {
+    $('#login-overlay').classList.add('hidden');
+    $('#app').style.display = '';
+  }
+
+  async function handleLogin() {
+    const token = $('#token-input').value.trim();
+    if (!token) return;
+    state.token = token;
+    try {
+      await api('/admin/accounts');
+      localStorage.setItem('admin_token', token);
+      hideLogin();
+      await fetchAll();
+      startAutoRefresh();
+      connectSSE();
+    } catch (e) {
+      state.token = '';
+      showLogin(e.message === 'unauthorized' ? 'Token 无效' : '连接失败');
+    }
+  }
+
+  $('#login-btn').addEventListener('click', handleLogin);
+  $('#token-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
+  $('#logout-btn').addEventListener('click', () => {
+    if (state.es) { state.es.close(); state.es = null; }
+    state.token = '';
+    localStorage.removeItem('admin_token');
+    showLogin();
+  });
+
+  // 数据获取与渲染
+
+  async function fetchAll() {
+    try {
+      const [accData, usageData, summaryData] = await Promise.all([
+        api('/admin/accounts'),
+        api('/admin/usage?days=7'),
+        api('/admin/usage/summary?days=7'),
+      ]);
+      renderAccounts(accData.accounts || []);
+      renderUsage(usageData.usage || []);
+      renderSummary(summaryData.summary || {}, summaryData.daily || []);
+      $('#footer').textContent = '最后刷新: ' + fmtNow();
+    } catch (e) {
+      if (e.message === 'unauthorized') showLogin('Token 已失效，请重新登录');
+    }
+  }
+
+  function renderSummary(summary, daily) {
+    $('#s-requests').textContent = fmt(summary.total_requests || 0);
+    $('#s-input').textContent = fmt(summary.total_input_tokens || 0);
+    $('#s-output').textContent = fmt(summary.total_output_tokens || 0);
+    $('#s-clients').textContent = String(summary.unique_clients || 0);
+    renderChart(daily);
+  }
+
+  function renderAccounts(accounts) {
+    state.accounts = accounts;
+    const tbody = $('#accounts-tbody');
+    tbody.innerHTML = accounts.map(a => {
+      const badge = a.status === 'active'
+        ? '<span class="badge badge-active">活跃</span>'
+        : '<span class="badge badge-cooldown">冷却中</span>';
+      const cd = a.cooldownRemaining > 0
+        ? '<span data-cd="' + a.cooldownRemaining + '">' + Math.ceil(a.cooldownRemaining / 1000) + 's</span>'
+        : '--';
+      return '<tr><td>' + a.index + '</td><td>' + badge + '</td><td>' + (a.sessionCount || 0) + '</td><td>' + a.requestCount + '</td><td>' + fmt(a.tokenUsed) + '</td><td>...' + a.apiKeySuffix + '</td><td>' + cd + '</td></tr>';
+    }).join('');
+    startCooldownTimer();
+  }
+
+  function renderUsage(usage) {
+    const tbody = $('#usage-tbody');
+    tbody.innerHTML = usage.map(u =>
+      '<tr><td>' + u.client_ip + '</td><td>' + u.total_requests + '</td><td>' + fmt(u.total_input_tokens) + '</td><td>' + fmt(u.total_output_tokens) + '</td><td>' + fmtTime(u.last_request) + '</td></tr>'
+    ).join('');
+  }
+
+  function renderChart(daily) {
+    const container = $('#chart-container');
+    if (typeof Chart === 'undefined') {
+      $('#chart-fallback').classList.remove('hidden');
+      $('#daily-chart').style.display = 'none';
+      return;
+    }
+    $('#chart-fallback').classList.add('hidden');
+    $('#daily-chart').style.display = '';
+
+    const sorted = [...daily].reverse();
+    const labels = sorted.map(d => d.date.slice(5));
+    const requests = sorted.map(d => d.total_requests || 0);
+    const inputTokens = sorted.map(d => Math.round((d.total_input_tokens || 0) / 1000));
+    const outputTokens = sorted.map(d => Math.round((d.total_output_tokens || 0) / 1000));
+
+    if (dailyChart) {
+      dailyChart.data.labels = labels;
+      dailyChart.data.datasets[0].data = requests;
+      dailyChart.data.datasets[1].data = inputTokens;
+      dailyChart.data.datasets[2].data = outputTokens;
+      dailyChart.update('none');
+      return;
+    }
+
+    const cc = isLight() ? chartColors.light : chartColors.dark;
+    dailyChart = new Chart($('#daily-chart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: '请求数', data: requests, borderColor: '#6c8cff', backgroundColor: 'rgba(108,140,255,.1)', fill: true, tension: .3, yAxisID: 'y' },
+          { label: '输入 Token (K)', data: inputTokens, borderColor: '#fbbf24', backgroundColor: 'transparent', tension: .3, yAxisID: 'y1' },
+          { label: '输出 Token (K)', data: outputTokens, borderColor: '#34d399', backgroundColor: 'transparent', tension: .3, yAxisID: 'y1' },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        devicePixelRatio: window.devicePixelRatio || 1,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { labels: { color: cc.text } } },
+        scales: {
+          x: { ticks: { color: cc.text }, grid: { color: cc.grid } },
+          y: { position: 'left', title: { display: true, text: '请求数', color: cc.text }, ticks: { color: cc.text }, grid: { color: cc.grid } },
+          y1: { position: 'right', title: { display: true, text: 'Token (K)', color: cc.text }, ticks: { color: cc.text }, grid: { drawOnChartArea: false } },
+        },
+      },
+    });
+  }
+
+  // 冷却倒计时
+  function startCooldownTimer() {
+    if (state.cooldownTimer) clearInterval(state.cooldownTimer);
+    const els = document.querySelectorAll('[data-cd]');
+    if (els.length === 0) return;
+    const starts = Array.from(els).map(el => ({ el, ms: parseInt(el.getAttribute('data-cd')), start: Date.now() }));
+    state.cooldownTimer = setInterval(() => {
+      let anyLeft = false;
+      for (const item of starts) {
+        const elapsed = Date.now() - item.start;
+        const left = Math.max(0, Math.ceil((item.ms - elapsed) / 1000));
+        if (left > 0) { item.el.textContent = left + 's'; anyLeft = true; }
+        else { item.el.textContent = '--'; }
+      }
+      if (!anyLeft) clearInterval(state.cooldownTimer);
+    }, 1000);
+  }
+
+  // 自动刷新
+  function startAutoRefresh() {
+    stopAutoRefresh();
+    const sec = parseInt($('#refresh-interval').value);
+    if (sec > 0) state.timerId = setInterval(fetchAll, sec * 1000);
+  }
+  function stopAutoRefresh() {
+    if (state.timerId) { clearInterval(state.timerId); state.timerId = null; }
+  }
+
+  $('#refresh-btn').addEventListener('click', fetchAll);
+  $('#refresh-interval').addEventListener('change', startAutoRefresh);
+
+  // SSE 实时推送
+  function connectSSE() {
+    if (state.es) { state.es.close(); state.es = null; }
+    state.es = new EventSource('/admin/events?token=' + encodeURIComponent(state.token));
+    state.es.onmessage = (e) => {
+      appendLog(JSON.parse(e.data));
+    };
+    state.es.onerror = () => { state.es = null; };
+  }
+
+  // 请求日志流（保留最近 30 条）
+  function appendLog(ev) {
+    const list = $('#log-list');
+    const now = new Date();
+    const ts = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0') + ':' + now.getSeconds().toString().padStart(2,'0');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = '<span class="log-time">' + ts + '</span><span class="log-body">' + ev.clientIp + ' | ' + ev.model + ' | 账户#' + ev.accountIndex + ' | ' + fmt(ev.inputTokens) + '/' + fmt(ev.outputTokens) + ' tokens</span>';
+    list.prepend(entry);
+    state.logCount++;
+    while (state.logCount > 30) { list.removeChild(list.lastChild); state.logCount--; }
+  }
+
+  // 初始化
+  if (state.token) {
+    api('/admin/accounts').then(() => {
+      hideLogin();
+      fetchAll();
+      startAutoRefresh();
+      connectSSE();
+    }).catch(() => {
+      state.token = '';
+      showLogin();
+    });
+  }
+})();
+</script>
+</body>
+</html>`;

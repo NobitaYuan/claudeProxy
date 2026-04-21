@@ -33,7 +33,7 @@ GLM_API_KEYS=sk-你的key1,sk-你的key2
 # GLM API 端点
 GLM_API_BASE=https://open.bigmodel.cn/api/anthropic
 
-# 服务端���
+# 服务端
 PORT=3000
 
 # 管理 API 认证 token
