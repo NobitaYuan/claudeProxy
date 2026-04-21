@@ -26,19 +26,21 @@ pnpm start    # 运行构建产物
 
 ```
 src/
-├── index.ts           # 入口，启动服务，注入客户端 IP 中间件
-├── config.ts          # 环境变量配置
+├── index.ts              # 入口，启动服务，注入客户端 IP 中间件
+├── config.ts             # 环境变量配置
+├── utils/
+│   └── tools.ts          # 通用工具函数（getLocalIPs）
 ├── proxy/
-│   ├── handler.ts     # 流式代理核心（SSE 转发、429 重试、usage 提取）
-│   └── accountPool.ts # 账户池（session 粘性绑定、最少绑定数分配、配额感知调度、过期清理）
+│   ├── proxy.ts          # 流式代理核心（SSE 转发、429 重试、usage 提取）
+│   └── accountBalancer.ts # 账户负载均衡（session 粘性绑定、配额感知调度、过期清理）
 ├── stats/
-│   ├── db.ts          # SQLite 初始化（requests + calibrations 表）
-│   ├── tracker.ts     # 本地用量记录和查询（统一 token 计数）
-│   └── calibrator.ts  # 定时拉取上游真实用量和配额（30 分钟一次，按 key 并发）
+│   ├── database.ts       # SQLite 初始化（requests + calibrations 表）
+│   ├── requestLog.ts     # 本地请求记录和查询
+│   └── upstreamSync.ts   # 定时拉取上游真实用量和配额（30 分钟一次，按 key 并发）
 └── admin/
-    ├── routes.ts      # 管理 API（账户状态、用量统计、校准数据）
-    ├── dashboard.ts   # 管理面板 HTML（主题切换、实时日志抽屉、Chart.js 图表）
-    └── events.ts      # SSE 事件总线（实时推送代理请求）
+    ├── routes.ts         # 管理 API（账户状态、用量统计、配额数据）
+    ├── dashboard.ts      # 管理面板 HTML（主题切换、实时日志抽屉、Chart.js 图表）
+    └── events.ts         # SSE 事件总线（实时推送代理请求）
 ```
 
 ## 上游 GLM API 数据
@@ -78,12 +80,12 @@ src/
 - 请求失败（429 或网络异常）最多重试 3 次（MAX_RETRIES）
 - Session 过期清理：每 5 分钟扫描，超过 `SESSION_TIMEOUT_MS`（默认 30 分钟）无请求的绑定自动清除
 
-配额数据由 Calibrator 每 30 分钟按 key 并发拉取，取每个 key 最高配额百分比回注到 AccountPool。
+配额数据由 UpstreamSync 每 30 分钟按 key 并发拉取，AccountBalancer 通过 `getQuotaHints()` 从 DB 读取各 key 的 5 小时配额百分比，用于调度决策。
 
 ## Token 统计方式
 
 - 本地统计：记录每个请求的 client_ip、model、account_key_index、status_code（已移除本地 token 提取，SSE 流直接透传不做解析）
-- 上游数据：Calibrator 每 30 分钟按 key 拉取今日 00:00 至当前的 `totalTokensUsage` 和 `totalModelCallCount`
+- 上游数据：UpstreamSync 每 30 分钟按 key 拉取今日 00:00 至当前的 `totalTokensUsage` 和 `totalModelCallCount`
 - 两者独立展示，不做校准/换算
 
 ## 数据库表结构

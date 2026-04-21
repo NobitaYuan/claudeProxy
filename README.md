@@ -5,34 +5,35 @@
 ## 架构
 
 ```
-                    Claude Code (员工机器)
+                     员工 (Claude Code)
+                           │
+                   1. POST /v1/messages
                            │
                            ▼
-┌──────────────────────────────────────────────────┐
-│                  代理服务 (Hono)                   │
-│                                                    │
-│  ┌─────────────┐  ┌──────────┐  ┌──────────────┐  │
-│  │  Proxy      │  │ Account  │  │  Calibrator  │  │
-│  │  Handler    │◄─┤ Pool     │◄─┤  (每30min)   │  │
-│  │ (SSE转发)   │  │(调度算法) │  │  配额校准    │  │
-│  └──────┬──────┘  └──────────┘  └──────────────┘  │
-│         │              ▲                           │
-│         ▼              │                           │
-│  ┌─────────────┐  ┌──────────┐                    │
-│  │  Tracker    │  │ SQLite   │                    │
-│  │  (用量记录) │─►│ 数据库   │                    │
-│  └─────────────┘  └──────────┘                    │
-│         │              ▲                           │
-└─────────┼──────────────┼──────────────────────────┘
-          │              │
-          ▼              ▼
-   Web 管理面板    Admin API
-   (Dashboard)    (用量/配额查询)
-          │
-          ▼
-   ┌──────────────┐
-   │  GLM 上游 API │
-   └──────────────┘
++-----------------------------------------------------------+
+|                       代理服务 (Hono)                       |
+|                                                            |
+|   +-----------+   +---------------+   +----------------+   |
+|   |  请求记录  |   |    调度算法     |   |  上游用量记录   |   |
+|   |RequestLog |   |AccountBalancer |   | UpstreamSync   |   |
+|   +-----+-----+   +-------+-------+   +-------+--------+   |
+|         |                  |                   |            |
+|         +--------+---------+----------+--------+            |
+|                           ▼                                |
+|                     +-----------+                          |
+|                     |  SQLite   |                          |
+|                     |  数据库    |                          |
+|                     +-----------+                          |
++-----------------------------+------------------------------+
+                              |
+                     2. 选定 Key 转发请求
+                              |
+                              ▼
+                     +-----------------+
+                     |  GLM 上游 API   |
+                     +--------+--------+
+                              |
+                     3. SSE 流式响应原路返回
 ```
 
 ## 账号切换算法
@@ -66,7 +67,7 @@ Account #3: 3 sessions (active)  ← 同绑定数，看配额
 
 ### 3. 配额感知调度
 
-Calibrator 每 30 分钟拉取每个 Key 的三类配额百分比：
+UpstreamSync 每 30 分钟拉取每个 Key 的三类配额百分比，写入 DB。AccountBalancer 调度时通过 `getQuotaHints()` 从 DB 读取各 key 的 5 小时配额百分比。
 
 | 配额类型 | 周期 | 说明 |
 |---------|------|------|
@@ -84,7 +85,7 @@ Calibrator 每 30 分钟拉取每个 Key 的三类配额百分比：
 请求到达
   │
   ▼
-从 AccountPool 按 session 粘性获取账户
+从 AccountBalancer 按 session 粘性获取账户
   │
   ▼
 向上游发起请求
@@ -161,9 +162,9 @@ curl http://localhost:3000/admin/events?token=your-token
 
 每个代理请求实时推送 JSON 事件（包含 IP、模型、账户、session ID）。
 
-## 上游配额校准
+## 上游配额同步
 
-Calibrator 在后台每 30 分钟执行一次：
+UpstreamSync 在后台每 30 分钟执行一次：
 
 1. **并发拉取**每个 Key 的上游数据（用量 + 配额）
 2. **用量接口**：`GET {base}/api/monitor/usage/model-usage?startTime=...&endTime=...`
@@ -171,20 +172,18 @@ Calibrator 在后台每 30 分钟执行一次：
 3. **配额接口**：`GET {base}/api/monitor/usage/quota/limit`
    - 获取三类配额的 `percentage`（已用百分比）
 4. 写入 `calibrations` 表（按日期 + Key 去重，同天多次拉取覆盖更新）
-5. 取每个 Key 的**最高配额百分比**回注到 AccountPool，影响后续调度
+5. AccountBalancer 调度时通过 `getQuotaHints()` 从 DB 读取各 key 的 5 小时配额百分比
 
 ```
-Calibrator.run() ──► fetchForKey(key#0) ──► model-usage + quota-limit
-                 ──► fetchForKey(key#1) ──► model-usage + quota-limit
-                 ──► ...
-                            │
-                            ▼
-                  写入 calibrations 表
-                  提取最高配额百分比
-                            │
-                            ▼
-                  pool.setQuotaHints(hints)
-                  ──► 影响下次 leastLoadedAccount() 决策
+UpstreamSync.run() ──► fetchForKey(key#0) ──► model-usage + quota-limit
+                   ──► fetchForKey(key#1) ──► model-usage + quota-limit
+                   ──► ...
+                              │
+                              ▼
+                    写入 calibrations 表
+                              │
+                    AccountBalancer.leastLoadedAccount()
+                    ──► upstreamSync.getQuotaHints() 从 DB 读取
 ```
 
 ## 快速开始
