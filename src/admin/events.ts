@@ -6,8 +6,6 @@ export interface ProxyEvent {
   accountIndex: number;
   clientIp: string;
   model: string;
-  inputTokens: number;
-  outputTokens: number;
 }
 
 class DashboardEventBus {
@@ -18,7 +16,11 @@ class DashboardEventBus {
   emitProxyEvent(event: ProxyEvent) {
     const data = JSON.stringify(event);
     for (const client of this.clients) {
-      client.write(`data: ${data}\n\n`);
+      try {
+        client.write(`data: ${data}\n\n`);
+      } catch {
+        this.clients.delete(client);
+      }
     }
   }
 

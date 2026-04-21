@@ -25,8 +25,8 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
   #app { display: flex; flex-direction: column; height: 100vh; }
   .header { flex-shrink: 0; }
-  .main-row { flex: 1; display: flex; min-height: 0; overflow: hidden; }
-  .main-content { flex: 1; min-width: 0; overflow-y: auto; }
+  .main-row { flex: 1; display: flex; min-height: 0; overflow: auto; }
+  .main-content { flex: 1; min-width: 0;  }
 
   /* 登录遮罩 */
   #login-overlay { position: fixed; inset: 0; background: var(--overlay-bg); display: flex; align-items: center; justify-content: center; z-index: 100; }
@@ -53,10 +53,35 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
   .container { max-width: 1200px; margin: 0 auto; padding: 20px 24px; }
 
   /* 汇总卡片 */
-  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
   .card { background: var(--bg-card); border-radius: var(--radius); padding: 20px; border: 1px solid var(--border); }
   .card-label { font-size: 13px; color: var(--text-dim); margin-bottom: 8px; }
   .card-value { font-size: 28px; font-weight: 700; }
+
+  /* 系统状态点 */
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .status-dot.green { background: var(--success); }
+  .status-dot.yellow { background: var(--warning); }
+  .status-dot.red { background: var(--danger); }
+
+  /* Per-Key 卡片 */
+  .key-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px; }
+  .key-card { background: var(--bg-card); border-radius: var(--radius); padding: 20px; border: 1px solid var(--border); }
+  .key-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .key-card-title { font-size: 15px; font-weight: 600; }
+  .key-card-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; font-size: 13px; }
+  .key-card-stat-label { color: var(--text-dim); }
+  .key-card-stat-value { font-weight: 600; }
+
+  /* 配额进度条 */
+  .quota-row { margin-bottom: 8px; }
+  .quota-row:last-child { margin-bottom: 0; }
+  .quota-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); margin-bottom: 3px; }
+  .quota-bar { height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
+  .quota-fill { height: 100%; border-radius: 3px; transition: width .4s ease; }
+  .quota-fill.green { background: var(--success); }
+  .quota-fill.orange { background: var(--warning); }
+  .quota-fill.red { background: var(--danger); }
 
   /* 图表区 */
   .chart-card { background: var(--bg-card); border-radius: var(--radius); padding: 20px; border: 1px solid var(--border); margin-bottom: 20px; }
@@ -65,8 +90,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
   .hidden { display: none !important; }
   .chart-fallback { color: var(--text-dim); text-align: center; padding: 40px 0; font-size: 14px; }
 
-  /* 双栏布局 */
-  .tables-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  /* 表格卡片 */
   .table-card { background: var(--bg-card); border-radius: var(--radius); padding: 20px; border: 1px solid var(--border); overflow-x: auto; }
   .table-card h3 { font-size: 15px; margin-bottom: 12px; font-weight: 600; }
 
@@ -84,7 +108,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
   /* 页脚 */
   .footer { text-align: center; color: var(--text-dim); font-size: 13px; padding: 12px; }
 
-  /* 日志抽屉 — flex 子元素，推开主内容 */
+  /* 日志抽屉 */
   .drawer-toggle { flex-shrink: 0; background: var(--accent); color: #fff; border: none; border-radius: var(--radius) 0 0 var(--radius); padding: 12px 6px; font-size: 12px; writing-mode: vertical-lr; cursor: pointer; letter-spacing: 2px; transition: background .15s; align-self: center; }
   .drawer-toggle:hover { background: var(--accent-hover); }
   .drawer { width: 0; overflow: hidden; background: var(--bg-card); border-left: 1px solid var(--border); transition: width .3s; display: flex; flex-direction: column; flex-shrink: 0; }
@@ -105,7 +129,6 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
   /* 响应式 */
   @media (max-width: 900px) {
     .summary-grid { grid-template-columns: repeat(2, 1fr); }
-    .tables-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 500px) {
     .summary-grid { grid-template-columns: 1fr; }
@@ -146,11 +169,11 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
     <div class="main-content">
       <div class="container">
         <div class="summary-grid" id="summary-cards">
-          <div class="card"><div class="card-label">总请求数</div><div class="card-value" id="s-requests">-</div></div>
-          <div class="card"><div class="card-label">总输入 Token</div><div class="card-value" id="s-input">-</div></div>
-          <div class="card"><div class="card-label">总输出 Token</div><div class="card-value" id="s-output">-</div></div>
+          <div class="card"><div class="card-label"><span class="status-dot" id="s-dot"></span>总请求数（本地）</div><div class="card-value" id="s-requests">-</div></div>
+          <div class="card"><div class="card-label">今日总Token</div><div class="card-value" id="s-tokens">-</div></div>
           <div class="card"><div class="card-label">独立客户端</div><div class="card-value" id="s-clients">-</div></div>
         </div>
+        <div class="key-grid" id="key-cards"></div>
         <div class="chart-card">
           <h3>每日趋势</h3>
           <div id="chart-container">
@@ -158,21 +181,12 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
             <div class="chart-fallback hidden" id="chart-fallback">图表加载失败，请检查网络连接</div>
           </div>
         </div>
-        <div class="tables-grid">
-          <div class="table-card">
-            <h3>账户池状态</h3>
-            <table>
-              <thead><tr><th>#</th><th>状态</th><th>Sessions</th><th>请求数</th><th>Token 用量</th><th>Key 后缀</th><th>冷却</th></tr></thead>
-              <tbody id="accounts-tbody"></tbody>
-            </table>
-          </div>
-          <div class="table-card">
-            <h3>客户端用量统计</h3>
-            <table>
-              <thead><tr><th>IP</th><th>请求数</th><th>输入 Token</th><th>输出 Token</th><th>最后请求</th></tr></thead>
-              <tbody id="usage-tbody"></tbody>
-            </table>
-          </div>
+        <div class="table-card" style="margin-bottom:20px">
+          <h3>客户端用量统计</h3>
+          <table>
+            <thead><tr><th>IP</th><th>请求数</th><th>最后请求</th></tr></thead>
+            <tbody id="usage-tbody"></tbody>
+          </table>
         </div>
       </div>
       <div class="footer" id="footer">最后刷新: -</div>
@@ -188,7 +202,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
 <script>
 (function() {
   const $ = (s) => document.querySelector(s);
-  const state = { token: localStorage.getItem('admin_token') || '', timerId: null, cooldownTimer: null, accounts: [], es: null, logCount: 0 };
+  const state = { token: localStorage.getItem('admin_token') || '', timerId: null, es: null, logCount: 0 };
   let dailyChart = null;
 
   // 主题切换
@@ -212,8 +226,6 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
     dailyChart.options.scales.y.ticks.color = c.text;
     dailyChart.options.scales.y.title.color = c.text;
     dailyChart.options.scales.y.grid.color = c.grid;
-    dailyChart.options.scales.y1.ticks.color = c.text;
-    dailyChart.options.scales.y1.title.color = c.text;
     dailyChart.update('none');
   }
   applyTheme(localStorage.getItem('theme') === 'light');
@@ -293,7 +305,6 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
   });
 
   // 数据获取与渲染
-
   async function fetchAll() {
     try {
       const [accData, usageData, summaryData] = await Promise.all([
@@ -301,42 +312,73 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
         api('/admin/usage?days=7'),
         api('/admin/usage/summary?days=7'),
       ]);
-      renderAccounts(accData.accounts || []);
+      const accounts = accData.accounts || [];
+      renderKeyCards(accounts);
       renderUsage(usageData.usage || []);
-      renderSummary(summaryData.summary || {}, summaryData.daily || []);
+      renderSummary(summaryData.summary || {}, summaryData.daily || [], accounts);
       $('#footer').textContent = '最后刷新: ' + fmtNow();
     } catch (e) {
       if (e.message === 'unauthorized') showLogin('Token 已失效，请重新登录');
     }
   }
 
-  function renderSummary(summary, daily) {
+  function renderSummary(summary, daily, accounts) {
     $('#s-requests').textContent = fmt(summary.total_requests || 0);
-    $('#s-input').textContent = fmt(summary.total_input_tokens || 0);
-    $('#s-output').textContent = fmt(summary.total_output_tokens || 0);
+    const upstreamTotal = accounts.reduce((sum, a) => sum + (a.todayUpstreamTokens || 0), 0);
+    $('#s-tokens').textContent = fmt(upstreamTotal);
     $('#s-clients').textContent = String(summary.unique_clients || 0);
     renderChart(daily);
   }
 
-  function renderAccounts(accounts) {
-    state.accounts = accounts;
-    const tbody = $('#accounts-tbody');
-    tbody.innerHTML = accounts.map(a => {
+  // Per-Key 卡片
+  function renderKeyCards(accounts) {
+    const container = $('#key-cards');
+    // 系统状态点
+    const dot = $('#s-dot');
+    const hasCooldown = accounts.some(a => a.status === 'cooldown');
+    dot.className = 'status-dot ' + (hasCooldown ? 'yellow' : 'green');
+
+    container.innerHTML = accounts.map(a => {
       const badge = a.status === 'active'
         ? '<span class="badge badge-active">活跃</span>'
         : '<span class="badge badge-cooldown">冷却中</span>';
-      const cd = a.cooldownRemaining > 0
-        ? '<span data-cd="' + a.cooldownRemaining + '">' + Math.ceil(a.cooldownRemaining / 1000) + 's</span>'
-        : '--';
-      return '<tr><td>' + a.index + '</td><td>' + badge + '</td><td>' + (a.sessionCount || 0) + '</td><td>' + a.requestCount + '</td><td>' + fmt(a.tokenUsed) + '</td><td>...' + a.apiKeySuffix + '</td><td>' + cd + '</td></tr>';
+      const q = a.quotas || {};
+      const quotasHtml = buildQuotaBars([
+        { label: '5h Token', pct: q.fiveHour },
+        { label: '周度 Token', pct: q.weekly },
+        { label: '月度 MCP', pct: q.monthly },
+      ]);
+      return '<div class="key-card">' +
+        '<div class="key-card-header">' +
+          '<span class="key-card-title">Key #' + a.index + ' (...' + a.apiKeySuffix + ')</span>' +
+          badge +
+        '</div>' +
+        '<div class="key-card-stats">' +
+          '<div><div class="key-card-stat-label">活跃 Session</div><div class="key-card-stat-value">' + (a.sessionCount || 0) + '</div></div>' +
+          '<div><div class="key-card-stat-label">今日 Token</div><div class="key-card-stat-value">' + fmt(a.todayUpstreamTokens || 0) + '</div></div>' +
+        '</div>' +
+        quotasHtml +
+      '</div>';
     }).join('');
-    startCooldownTimer();
+  }
+
+  function buildQuotaBars(items) {
+    return items.map(item => {
+      const pct = item.pct;
+      const display = pct !== null && pct !== undefined ? pct + '%' : '-';
+      const barWidth = pct !== null && pct !== undefined ? Math.min(pct, 100) : 0;
+      const colorClass = barWidth > 90 ? 'red' : barWidth > 70 ? 'orange' : 'green';
+      return '<div class="quota-row">' +
+        '<div class="quota-label"><span>' + item.label + '</span><span>' + display + '</span></div>' +
+        '<div class="quota-bar"><div class="quota-fill ' + colorClass + '" style="width:' + barWidth + '%"></div></div>' +
+      '</div>';
+    }).join('');
   }
 
   function renderUsage(usage) {
     const tbody = $('#usage-tbody');
     tbody.innerHTML = usage.map(u =>
-      '<tr><td>' + u.client_ip + '</td><td>' + u.total_requests + '</td><td>' + fmt(u.total_input_tokens) + '</td><td>' + fmt(u.total_output_tokens) + '</td><td>' + fmtTime(u.last_request) + '</td></tr>'
+      '<tr><td>' + u.client_ip + '</td><td>' + u.total_requests + '</td><td>' + fmtTime(u.last_request) + '</td></tr>'
     ).join('');
   }
 
@@ -353,14 +395,10 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
     const sorted = [...daily].reverse();
     const labels = sorted.map(d => d.date.slice(5));
     const requests = sorted.map(d => d.total_requests || 0);
-    const inputTokens = sorted.map(d => Math.round((d.total_input_tokens || 0) / 1000));
-    const outputTokens = sorted.map(d => Math.round((d.total_output_tokens || 0) / 1000));
 
     if (dailyChart) {
       dailyChart.data.labels = labels;
       dailyChart.data.datasets[0].data = requests;
-      dailyChart.data.datasets[1].data = inputTokens;
-      dailyChart.data.datasets[2].data = outputTokens;
       dailyChart.update('none');
       return;
     }
@@ -371,9 +409,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
       data: {
         labels,
         datasets: [
-          { label: '请求数', data: requests, borderColor: '#6c8cff', backgroundColor: 'rgba(108,140,255,.1)', fill: true, tension: .3, yAxisID: 'y' },
-          { label: '输入 Token (K)', data: inputTokens, borderColor: '#fbbf24', backgroundColor: 'transparent', tension: .3, yAxisID: 'y1' },
-          { label: '输出 Token (K)', data: outputTokens, borderColor: '#34d399', backgroundColor: 'transparent', tension: .3, yAxisID: 'y1' },
+          { label: '请求数', data: requests, borderColor: '#6c8cff', backgroundColor: 'rgba(108,140,255,.1)', fill: true, tension: .3 },
         ],
       },
       options: {
@@ -384,29 +420,10 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
         plugins: { legend: { labels: { color: cc.text } } },
         scales: {
           x: { ticks: { color: cc.text }, grid: { color: cc.grid } },
-          y: { position: 'left', title: { display: true, text: '请求数', color: cc.text }, ticks: { color: cc.text }, grid: { color: cc.grid } },
-          y1: { position: 'right', title: { display: true, text: 'Token (K)', color: cc.text }, ticks: { color: cc.text }, grid: { drawOnChartArea: false } },
+          y: { title: { display: true, text: '请求数', color: cc.text }, ticks: { color: cc.text }, grid: { color: cc.grid } },
         },
       },
     });
-  }
-
-  // 冷却倒计时
-  function startCooldownTimer() {
-    if (state.cooldownTimer) clearInterval(state.cooldownTimer);
-    const els = document.querySelectorAll('[data-cd]');
-    if (els.length === 0) return;
-    const starts = Array.from(els).map(el => ({ el, ms: parseInt(el.getAttribute('data-cd')), start: Date.now() }));
-    state.cooldownTimer = setInterval(() => {
-      let anyLeft = false;
-      for (const item of starts) {
-        const elapsed = Date.now() - item.start;
-        const left = Math.max(0, Math.ceil((item.ms - elapsed) / 1000));
-        if (left > 0) { item.el.textContent = left + 's'; anyLeft = true; }
-        else { item.el.textContent = '--'; }
-      }
-      if (!anyLeft) clearInterval(state.cooldownTimer);
-    }, 1000);
   }
 
   // 自动刷新
@@ -439,7 +456,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
     const ts = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0') + ':' + now.getSeconds().toString().padStart(2,'0');
     const entry = document.createElement('div');
     entry.className = 'log-entry';
-    entry.innerHTML = '<span class="log-time">' + ts + '</span><span class="log-body">' + ev.clientIp + ' | ' + ev.model + ' | 账户#' + ev.accountIndex + ' | ' + fmt(ev.inputTokens) + '/' + fmt(ev.outputTokens) + ' tokens</span>';
+    entry.innerHTML = '<span class="log-time">' + ts + '</span><span class="log-body">' + ev.clientIp + ' | ' + ev.model + ' | 账户#' + ev.accountIndex + '</span>';
     list.prepend(entry);
     state.logCount++;
     while (state.logCount > 30) { list.removeChild(list.lastChild); state.logCount--; }

@@ -11,6 +11,8 @@ export class AccountPool {
   private accounts: Account[];
   // session_id → account index，同一 session 粘性绑定同一个 key
   private sessionBindings = new Map<string, number>();
+  // 各 key 的最高配额百分比（由外部注入）
+  private quotaHints = new Map<number, number>();
 
   constructor() {
     if (config.glmApiKeys.length === 0) {
@@ -47,6 +49,11 @@ export class AccountPool {
     return candidate;
   }
 
+  /** 外部注入各 key 的最高配额百分比，用于分配时跳过即将耗尽的 key */
+  setQuotaHints(map: Map<number, number>) {
+    this.quotaHints = map;
+  }
+
   /** 将账户标记为冷却状态 */
   cooldown(account: Account, durationMs?: number) {
     account.status = 'cooldown';
@@ -81,21 +88,41 @@ export class AccountPool {
     }
   }
 
-  /** 找到当前绑定 session 数最少的 active 账户 */
+  /** 找到当前绑定 session 数最少的 active 账户（跳过配额 >90% 的 key） */
   private leastLoadedAccount(): Account | null {
     const sessionCounts = new Array(this.accounts.length).fill(0) as number[];
     for (const idx of this.sessionBindings.values()) {
       sessionCounts[idx]++;
     }
 
+    // 先尝试排除配额 >90% 的 key
+    const isQuotaExceeded = (acc: Account) => {
+      const pct = this.quotaHints.get(acc.index);
+      return pct !== undefined && pct > 90;
+    };
+
     let best: Account | null = null;
     let bestCount = Infinity;
+    let anyCandidate = false;
     for (const acc of this.accounts) {
-      if (acc.status !== 'active') continue;
+      if (acc.status !== 'active' || isQuotaExceeded(acc)) continue;
+      anyCandidate = true;
       const count = sessionCounts[acc.index];
       if (count < bestCount) {
         best = acc;
         bestCount = count;
+      }
+    }
+
+    // 所有 key 都 >90%，退回原逻辑
+    if (!anyCandidate) {
+      for (const acc of this.accounts) {
+        if (acc.status !== 'active') continue;
+        const count = sessionCounts[acc.index];
+        if (count < bestCount) {
+          best = acc;
+          bestCount = count;
+        }
       }
     }
     return best;

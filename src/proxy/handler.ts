@@ -5,9 +5,9 @@ import type { UsageTracker } from '../stats/tracker.js';
 import { eventBus } from '../admin/events.js';
 import type {
   MessageCreateParams,
-  MessageParam,
   ContentBlockParam,
   TextBlockParam,
+  // 以下类型在注释的 SSE token 解析代码中使用，后续可能复用
   RawMessageStreamEvent,
   Message as AnthropicMessage,
 } from '@anthropic-ai/sdk/resources/messages/messages.js';
@@ -25,8 +25,8 @@ function formatConversationPreview(body: MessageCreateParams): string {
 
     const systemHint = body.system
       ? (typeof body.system === 'string'
-        ? `system: ${truncate(body.system, 40)}\n`
-        : `system: ${(body.system as ContentBlockParam[]).filter(b => b.type === 'text').map(b => truncate((b as TextBlockParam).text, 40)).join('; ')}\n`)
+          ? `system: ${truncate(body.system, 40)}\n`
+          : `system: ${(body.system as ContentBlockParam[]).filter(b => b.type === 'text').map(b => truncate((b as TextBlockParam).text, 40)).join('; ')}\n`)
       : '';
 
     const parts = messages.map((msg, i) => {
@@ -82,7 +82,6 @@ function extractSessionId(body: MessageCreateParams): string {
 export function createProxyHandler(pool: AccountPool, tracker: UsageTracker) {
   return async (c: Context<Env>) => {
     const clientIp = c.get('clientIp');
-    // 用 text() 读取原始请求体，后续可原样转发；同时 JSON.parse 一份用于日志和用量提取
     const body = await c.req.raw.clone().text();
     const parsedBody = JSON.parse(body) as MessageCreateParams;
     const model = parsedBody.model || 'unknown';
@@ -125,11 +124,11 @@ export function createProxyHandler(pool: AccountPool, tracker: UsageTracker) {
           continue;
         }
 
-        // 非 SSE 响应（普通 JSON 或错误）：直接转发，并从响应体提取 usage
+        // 非 SSE 响应（普通 JSON 或错误）：直接转发
         const contentType = upstream.headers.get('content-type') || '';
         if (!contentType.includes('text/event-stream')) {
           const respBody = await upstream.text();
-          trackUsageFromResponse(parsedBody, respBody, upstream.status, account, clientIp, model, pool, tracker);
+          recordUsage(tracker, account, clientIp, model, upstream.status);
           return new Response(respBody, {
             status: upstream.status,
             headers: forwardHeaders(upstream),
@@ -137,7 +136,7 @@ export function createProxyHandler(pool: AccountPool, tracker: UsageTracker) {
         }
 
         // SSE 流式响应：边转发边解析 usage
-        return streamResponse(upstream, account, clientIp, model, pool, tracker, parsedBody);
+        return streamResponse(upstream, account, clientIp, model, tracker, parsedBody);
       } catch (err) {
         // 网络层异常也触发重试，最后一次失败则返回 502
         console.error(`[Proxy] Error with Account #${account.index}:`, err);
@@ -147,87 +146,36 @@ export function createProxyHandler(pool: AccountPool, tracker: UsageTracker) {
       }
     }
 
-    // 所有重试都耗尽
     return c.json({ error: 'max_retries_exceeded', message: 'Failed after max retries.' }, 502);
   };
 }
 
-// SSE 流式响应处理：边向上游拉取数据边向客户端转发，同时在中间解析 usage token 数据
+// SSE 流式响应处理：边向上游拉取数据边向客户端转发
 function streamResponse(
   upstream: Response,
   account: Account,
   clientIp: string,
   model: string,
-  pool: AccountPool,
   tracker: UsageTracker,
   parsedBody: MessageCreateParams,
 ) {
   const reader = upstream.body!.getReader();
-  const encoder = new TextEncoder();
-
-  let usageData = { inputTokens: 0, outputTokens: 0 };
-  // 缓冲区：SSE 事件可能跨 chunk 分割，需要攒到完整行再解析
-  let buffer = '';
 
   const stream = new ReadableStream({
-    // pull 模式：消费端请求多少就拉多少，避免一次性读入大量数据
     async pull(controller) {
       try {
         const { done, value } = await reader.read();
         if (done) {
-          // 流结束：刷出缓冲区残余数据，记录本次请求的 token 用量
-          if (buffer) {
-            controller.enqueue(encoder.encode(buffer));
-          }
-          tracker.record({
-            clientIp,
-            model,
-            accountIndex: account.index,
-            inputTokens: usageData.inputTokens,
-            outputTokens: usageData.outputTokens,
-            statusCode: 200,
-          });
-          console.log(`[Proxy] <- Account #${account.index} done | tokens: ${usageData.inputTokens}-${usageData.outputTokens}`);
-          eventBus.emitProxyEvent({ accountIndex: account.index, clientIp, model, inputTokens: usageData.inputTokens, outputTokens: usageData.outputTokens });
+          recordUsage(tracker, account, clientIp, model, 200);
           controller.close();
           return;
         }
-
-        const chunk = new TextDecoder().decode(value);
-        buffer += chunk;
-
-        // 按行拆分 SSE 事件，解析其中的 usage 信息
-        const lines = buffer.split('\n');
-        buffer = '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-            if (data === '[DONE]') continue;
-            try {
-              const event = JSON.parse(data) as RawMessageStreamEvent;
-              // message_start 携带 input tokens（提示词用量）
-              if (event.type === 'message_start') {
-                usageData.inputTokens = event.message.usage.input_tokens || 0;
-                // message_delta 携带 output tokens（增量生成用量）
-              } else if (event.type === 'message_delta') {
-                usageData.outputTokens = event.usage.output_tokens || 0;
-                // message_stop 不携带 usage，仅标记流结束
-              }
-            } catch {
-              // 非 JSON 的 SSE 行，忽略
-            }
-          }
-        }
-
-        // 原样转发 chunk 给客户端
-        controller.enqueue(encoder.encode(chunk));
+        controller.enqueue(value);
       } catch (err) {
         console.error('[Proxy] Stream error:', err);
         controller.error(err);
       }
     },
-    // 客户端断开连接时取消上游 reader，释放资源
     cancel() {
       reader.cancel();
     },
@@ -237,46 +185,77 @@ function streamResponse(
     status: upstream.status,
     headers: {
       ...forwardHeaders(upstream),
-      // 禁用缓存和 Nginx 缓冲，确保 SSE 数据即时推送
       'cache-control': 'no-cache',
       'x-accel-buffering': 'no',
     },
   });
 }
 
-// 从非流式（JSON）响应体中提取 token 用量并记录
-function trackUsageFromResponse(
-  parsedBody: MessageCreateParams,
-  responseBody: string,
-  statusCode: number,
-  account: Account,
-  clientIp: string,
-  model: string,
-  pool: AccountPool,
-  tracker: UsageTracker,
-) {
-  let inputTokens = 0;
-  let outputTokens = 0;
-  try {
-    const json = JSON.parse(responseBody) as AnthropicMessage;
-    if (json.usage) {
-      inputTokens = json.usage.input_tokens || 0;
-      outputTokens = json.usage.output_tokens || 0;
-    }
-  } catch { /* ignore */ }
+// === 以下 SSE token 解析代码暂时不用，后续可能复用 ===
+//
+// function streamResponseWithTokenTracking(...) {
+//   const reader = upstream.body!.getReader();
+//   const encoder = new TextEncoder();
+//   let totalTokens = 0;
+//   let buffer = '';
+//
+//   const stream = new ReadableStream({
+//     async pull(controller) {
+//       try {
+//         const { done, value } = await reader.read();
+//         if (done) {
+//           if (buffer) controller.enqueue(encoder.encode(buffer));
+//           recordUsage(tracker, account, clientIp, model, 200, totalTokens);
+//           controller.close();
+//           return;
+//         }
+//         const chunk = new TextDecoder().decode(value);
+//         buffer += chunk;
+//         const lines = buffer.split('\n');
+//         buffer = '';
+//         for (const line of lines) {
+//           if (line.startsWith('data: ')) {
+//             const data = line.slice(6).trim();
+//             if (data === '[DONE]') continue;
+//             try {
+//               const event = JSON.parse(data) as RawMessageStreamEvent;
+//               if (event.type === 'message_start') {
+//                 totalTokens += event.message.usage.input_tokens || 0;
+//               } else if (event.type === 'message_delta') {
+//                 totalTokens += event.usage.output_tokens || 0;
+//               }
+//             } catch { /* 非 JSON 的 SSE 行 */ }
+//           }
+//         }
+//         controller.enqueue(encoder.encode(chunk));
+//       } catch (err) {
+//         console.error('[Proxy] Stream error:', err);
+//         controller.error(err);
+//       }
+//     },
+//     cancel() { reader.cancel(); },
+//   });
+//   ...
+// }
+//
+// function extractTokensFromJson(responseBody: string): number {
+//   try {
+//     const json = JSON.parse(responseBody) as AnthropicMessage;
+//     if (json.usage) {
+//       return (json.usage.input_tokens || 0) + (json.usage.output_tokens || 0);
+//     }
+//   } catch { /* ignore */ }
+//   return 0;
+// }
 
-  tracker.record({
-    clientIp,
-    model,
-    accountIndex: account.index,
-    inputTokens,
-    outputTokens,
-    statusCode,
-  });
-  eventBus.emitProxyEvent({ accountIndex: account.index, clientIp, model, inputTokens, outputTokens });
+// 统一记录用量
+function recordUsage(tracker: UsageTracker, account: Account, clientIp: string, model: string, statusCode: number) {
+  tracker.record({ clientIp, model, accountIndex: account.index, statusCode });
+  console.log(`[Proxy] <- Account #${account.index} done`);
+  eventBus.emitProxyEvent({ accountIndex: account.index, clientIp, model });
 }
 
-// 白名单转发上游响应头，只保留客户端需要的几个关键头
+// 白名单转发上游响应头
 function forwardHeaders(res: Response): Record<string, string> {
   const headers: Record<string, string> = {};
   const passThrough = ['content-type', 'request-id', 'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset'];
