@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
-import type { AccountPool, Account } from './accountPool.js';
+import type { AccountBalancer, Account } from './accountBalancer.js';
 import { config } from '../config.js';
-import type { UsageTracker } from '../stats/tracker.js';
+import type { RequestLog } from '../stats/requestLog.js';
 import { eventBus } from '../admin/events.js';
 import type {
   MessageCreateParams,
@@ -40,7 +40,7 @@ function extractSessionId(body: MessageCreateParams): string {
   }
 }
 
-export function createProxyHandler(pool: AccountPool, tracker: UsageTracker) {
+export function createProxyHandler(pool: AccountBalancer, tracker: RequestLog) {
   return async (c: Context<Env>) => {
     const clientIp = c.get('clientIp');
     const body = await c.req.raw.clone().text();
@@ -121,7 +121,7 @@ function streamResponse(
   account: Account,
   clientIp: string,
   model: string,
-  tracker: UsageTracker,
+  tracker: RequestLog,
   shortSid: string,
   contentTypes: string[],
 ) {
@@ -215,7 +215,7 @@ function streamResponse(
 // }
 
 // 统一记录用量
-function recordUsage(tracker: UsageTracker, account: Account, clientIp: string, model: string, statusCode: number, shortSid: string, contentTypes: string[]) {
+function recordUsage(tracker: RequestLog, account: Account, clientIp: string, model: string, statusCode: number, shortSid: string, contentTypes: string[]) {
   tracker.record({ clientIp, model, accountIndex: account.index, statusCode });
   const types = contentTypes.join(',');
   console.log(`[Proxy] session=${shortSid}… account=#${account.index} model=${model} | ${types} ${statusCode}`);

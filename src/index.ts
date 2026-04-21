@@ -1,43 +1,26 @@
-import os from 'node:os';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
-import { AccountPool } from './proxy/accountPool.js';
-import { createProxyHandler } from './proxy/handler.js';
-import { initDb } from './stats/db.js';
-import { UsageTracker } from './stats/tracker.js';
-import { Calibrator } from './stats/calibrator.js';
+import { AccountBalancer } from './proxy/accountBalancer.js';
+import { createProxyHandler } from './proxy/proxy.js';
+import { initDb } from './stats/database.js';
+import { RequestLog } from './stats/requestLog.js';
+import { UpstreamSync } from './stats/upstreamSync.js';
 import { createAdminRoutes } from './admin/routes.js';
 import { DASHBOARD_HTML } from './admin/dashboard.js';
 import { eventBus } from './admin/events.js';
-
-type Env = { Variables: { clientIp: string } };
-
-function getLocalIPs(): string[] {
-  const interfaces = os.networkInterfaces();
-  const ips: string[] = [];
-  for (const addrs of Object.values(interfaces)) {
-    if (!addrs) continue;
-    for (const addr of addrs) {
-      if (addr.family === 'IPv4' && !addr.internal) {
-        ips.push(addr.address);
-      }
-    }
-  }
-  return ips;
-}
+import { getLocalIPs } from './utils/tools.js';
 
 // Init DB
 initDb();
-const tracker = new UsageTracker();
-const pool = new AccountPool();
-pool.start();
-const calibrator = new Calibrator();
-calibrator.onQuotaChange((hints) => pool.setQuotaHints(hints));
-calibrator.start();
-const proxyHandler = createProxyHandler(pool, tracker);
+const requestLog = new RequestLog();
+const upstreamSync = new UpstreamSync();
+const accountBalancer = new AccountBalancer(upstreamSync);
+accountBalancer.start();
+upstreamSync.start();
+const proxyHandler = createProxyHandler(accountBalancer, requestLog);
 
-const app = new Hono<Env>();
+const app = new Hono<{ Variables: { clientIp: string } }>();
 
 // Inject client IP into context
 app.use('*', async (c, next) => {
@@ -56,7 +39,7 @@ app.get('/admin/', (c) => c.redirect('/admin/dashboard'));
 app.get('/admin/events', (c) => eventBus.handler(c));
 
 // Admin API routes
-app.route('/admin', createAdminRoutes(pool, tracker, calibrator));
+app.route('/admin', createAdminRoutes(accountBalancer, requestLog, upstreamSync));
 
 // Proxy: forward all /v1/* requests
 app.all('/v1/*', proxyHandler);
@@ -81,4 +64,5 @@ for (const ip of ips) {
 }
 console.log('  ANTHROPIC_API_KEY=placeholder');
 console.log('');
+
 serve({ fetch: app.fetch, port: config.port });

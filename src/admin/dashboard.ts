@@ -3,7 +3,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ClaudeProxy 管理面板</title>
+<title>ClaudeProxy 看板</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -112,7 +112,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
   .drawer-toggle { flex-shrink: 0; background: var(--accent); color: #fff; border: none; border-radius: var(--radius) 0 0 var(--radius); padding: 12px 6px; font-size: 12px; writing-mode: vertical-lr; cursor: pointer; letter-spacing: 2px; transition: background .15s; align-self: center; }
   .drawer-toggle:hover { background: var(--accent-hover); }
   .drawer { width: 0; overflow: hidden; background: var(--bg-card); border-left: 1px solid var(--border); transition: width .3s; display: flex; flex-direction: column; flex-shrink: 0; }
-  .drawer.open { width: 380px; }
+  .drawer.open { width: 400px; }
   .drawer-header { padding: 16px; border-bottom: 1px solid var(--border); font-size: 15px; font-weight: 600; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
   .drawer-body { flex: 1; overflow-y: auto; padding: 8px 16px; }
   .log-list { font-size: 13px; font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace; }
@@ -141,7 +141,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
 <!-- 登录遮罩 -->
 <div id="login-overlay">
   <div class="login-card">
-    <h2>ClaudeProxy 管理面板</h2>
+    <h2>ClaudeProxy 看板</h2>
     <input type="password" id="token-input" placeholder="输入 Admin Token" autocomplete="off">
     <div class="error" id="login-error"></div>
     <button class="btn btn-primary" id="login-btn">登录</button>
@@ -151,7 +151,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
 <!-- 主面板 -->
 <div id="app" style="display:none">
   <div class="header">
-    <h1>ClaudeProxy 管理面板</h1>
+    <h1>ClaudeProxy 看板</h1>
     <div class="header-controls">
       <select id="refresh-interval">
         <option value="15">15s 刷新</option>
@@ -174,19 +174,19 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
           <div class="card"><div class="card-label">客户端数</div><div class="card-value" id="s-clients">-</div></div>
         </div>
         <div class="key-grid" id="key-cards"></div>
-        <div class="chart-card">
-          <h3>每日趋势</h3>
-          <div id="chart-container">
-            <div class="chart-wrapper"><canvas id="daily-chart"></canvas></div>
-            <div class="chart-fallback hidden" id="chart-fallback">图表加载失败，请检查网络连接</div>
-          </div>
-        </div>
         <div class="table-card" style="margin-bottom:20px">
           <h3>客户端用量统计</h3>
           <table>
             <thead><tr><th>IP</th><th>请求数</th><th>最后请求</th></tr></thead>
             <tbody id="usage-tbody"></tbody>
           </table>
+        </div>
+           <div class="chart-card">
+          <h3>每日趋势</h3>
+          <div id="chart-container">
+            <div class="chart-wrapper"><canvas id="daily-chart"></canvas></div>
+            <div class="chart-fallback hidden" id="chart-fallback">图表加载失败，请检查网络连接</div>
+          </div>
         </div>
       </div>
       <div class="footer" id="footer">最后刷新: -</div>

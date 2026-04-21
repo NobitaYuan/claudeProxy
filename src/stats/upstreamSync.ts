@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { getDb } from './db.js';
+import { getDb } from './database.js';
 
 interface UpstreamModelUsage {
   totalUsage: {
@@ -12,6 +12,7 @@ export interface QuotaLimit {
   limits: {
     type: string;
     percentage: number;
+    unit?: number;
     currentValue?: number;
     usage?: number;
     usageDetails?: { modelCode: string; usage: number }[];
@@ -29,11 +30,10 @@ export interface KeyUpstreamData {
 
 const FETCH_INTERVAL_MS = 30 * 60 * 1000;
 
-export class Calibrator {
+export class UpstreamSync {
   private timer: ReturnType<typeof setInterval> | null = null;
   private keys: string[];
   private baseUrl: string;
-  private onQuotaUpdate?: (hints: Map<number, number>) => void;
 
   constructor() {
     this.keys = config.glmApiKeys;
@@ -41,15 +41,23 @@ export class Calibrator {
     this.baseUrl = `${parsed.protocol}//${parsed.host}`;
   }
 
-  /** 注册配额更新回调，用于注入到 AccountPool */
-  onQuotaChange(cb: (hints: Map<number, number>) => void) {
-    this.onQuotaUpdate = cb;
+  /** 从 DB 读取各 key 的 5 小时配额百分比，供 AccountPool 调度使用 */
+  getQuotaHints(): Map<number, number> {
+    const hints = new Map<number, number>();
+    for (const [index, data] of this.getLatest()) {
+      if (!data.quotas?.limits.length) continue;
+      const fiveHour = data.quotas.limits.find(l => l.type === 'TOKENS_LIMIT' && l.unit === 3);
+      hints.set(index, fiveHour
+        ? fiveHour.percentage
+        : Math.max(...data.quotas.limits.map(l => l.percentage)));
+    }
+    return hints;
   }
 
   start() {
     this.run();
     this.timer = setInterval(() => this.run(), FETCH_INTERVAL_MS);
-    console.log(`[Calibrator] 定时拉取上游用量已启动，${this.keys.length} 个 key，间隔 ${FETCH_INTERVAL_MS / 1000}s`);
+    console.log(`[UpstreamSync] 定时拉取上游用量已启动，${this.keys.length} 个 key，间隔 ${FETCH_INTERVAL_MS / 1000}s`);
   }
 
   stop() {
@@ -100,25 +108,15 @@ export class Calibrator {
         created_at = datetime('now', 'localtime')
     `);
 
-    // 收集各 key 的最高配额百分比，注入到 AccountPool
-    const hints = new Map<number, number>();
     let successCount = 0;
     for (const r of results) {
       if (r.status === 'fulfilled' && r.value) {
         const d = r.value;
         upsert.run(dateStr, d.accountKeyIndex, d.upstreamTokens, d.upstreamCalls, d.quotas ? JSON.stringify(d.quotas) : null);
         successCount++;
-        // 取该 key 所有配额限制中的最高百分比
-        if (d.quotas?.limits.length) {
-          const maxPct = Math.max(...d.quotas.limits.map(l => l.percentage));
-          hints.set(d.accountKeyIndex, maxPct);
-        }
       }
     }
-    if (hints.size > 0 && this.onQuotaUpdate) {
-      this.onQuotaUpdate(hints);
-    }
-    console.log(`[Calibrator] 上游数据已更新 | ${dateStr} | ${successCount}/${this.keys.length} 个 key 成功`);
+    console.log(`[UpstreamSync] 用量数据已更新 | ${dateStr} | ${successCount}/${this.keys.length} 个 key 成功`);
   }
 
   private async fetchForKey(apiKey: string, index: number, start: Date, end: Date): Promise<KeyUpstreamData | null> {
@@ -135,7 +133,7 @@ export class Calibrator {
         quotas,
       };
     } catch (err) {
-      console.error(`[Calibrator] Key #${index} 拉取失败:`, err);
+      console.error(`[UpstreamSync] Key #${index} 拉取失败:`, err);
       return null;
     }
   }
@@ -150,7 +148,7 @@ export class Calibrator {
       headers: { 'Authorization': apiKey, 'Content-Type': 'application/json' },
     });
     if (!res.ok) {
-      console.error(`[Calibrator] model-usage API 返回 ${res.status}`);
+      console.error(`[UpstreamSync] model-usage API 返回 ${res.status}`);
       return null;
     }
     const json = await res.json() as { success: boolean; data: UpstreamModelUsage };

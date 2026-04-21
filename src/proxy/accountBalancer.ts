@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import type { UpstreamSync } from '../stats/upstreamSync.js';
 
 export interface Account {
   index: number;
@@ -12,16 +13,16 @@ interface SessionBinding {
   lastActivity: number;
 }
 
-export class AccountPool {
+export class AccountBalancer {
   private accounts: Account[];
+  private upstreamSync: UpstreamSync;
   // session_id → 绑定信息，同一 session 粘性绑定同一个 key
   private sessionBindings = new Map<string, SessionBinding>();
-  // 各 key 的最高配额百分比（由外部注入）
-  private quotaHints = new Map<number, number>();
   // 过期清理定时器
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor() {
+  constructor(upstreamSync: UpstreamSync) {
+    this.upstreamSync = upstreamSync;
     if (config.glmApiKeys.length === 0) {
       throw new Error('GLM_API_KEYS is empty. Configure at least one API key.');
     }
@@ -61,11 +62,6 @@ export class AccountPool {
 
     this.sessionBindings.set(sessionId, { accountIndex: candidate.index, lastActivity: Date.now() });
     return candidate;
-  }
-
-  /** 外部注入各 key 的最高配额百分比，用于分配时跳过即将耗尽的 key */
-  setQuotaHints(map: Map<number, number>) {
-    this.quotaHints = map;
   }
 
   /** 将账户标记为冷却状态 */
@@ -134,7 +130,7 @@ export class AccountPool {
     for (const acc of this.accounts) {
       if (acc.status !== 'active') continue;
       const count = sessionCounts[acc.index];
-      const quota = this.quotaHints.get(acc.index) ?? 0;
+      const quota = this.upstreamSync.getQuotaHints().get(acc.index) ?? 0;
 
       if (best === null) { best = acc; bestCount = count; bestQuota = quota; continue; }
 

@@ -1,5 +1,5 @@
 import BetterSqlite3 from 'better-sqlite3';
-import { getDb } from './db.js';
+import { getDb } from './database.js';
 
 export interface UsageRecord {
   clientIp: string;
@@ -8,7 +8,7 @@ export interface UsageRecord {
   statusCode: number;
 }
 
-export class UsageTracker {
+export class RequestLog {
   private insertStmt: BetterSqlite3.Statement;
 
   constructor() {

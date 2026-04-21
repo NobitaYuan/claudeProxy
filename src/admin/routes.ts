@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import type { AccountPool } from '../proxy/accountPool.js';
-import type { UsageTracker } from '../stats/tracker.js';
-import type { Calibrator, KeyUpstreamData } from '../stats/calibrator.js';
+import type { AccountBalancer } from '../proxy/accountBalancer.js';
+import type { RequestLog } from '../stats/requestLog.js';
+import type { UpstreamSync, KeyUpstreamData } from '../stats/upstreamSync.js';
 import { config } from '../config.js';
 
 /** 从配额 limits 中提取三类百分比 */
@@ -12,7 +12,7 @@ function extractQuotaPercentages(quotas: KeyUpstreamData['quotas']): { monthly: 
     if (l.type === 'TIME_LIMIT') {
       result.monthly = l.percentage;
     } else if (l.type === 'TOKENS_LIMIT') {
-      const unit = (l as Record<string, unknown>).unit;
+      const unit = l.unit;
       if (unit === 3) result.fiveHour = l.percentage;
       else if (unit === 6) result.weekly = l.percentage;
     }
@@ -20,7 +20,7 @@ function extractQuotaPercentages(quotas: KeyUpstreamData['quotas']): { monthly: 
   return result;
 }
 
-export function createAdminRoutes(pool: AccountPool, tracker: UsageTracker, calibrator: Calibrator) {
+export function createAdminRoutes(pool: AccountBalancer, tracker: RequestLog, calibrator: UpstreamSync) {
   const admin = new Hono();
 
   // API 认证中间件
@@ -38,15 +38,6 @@ export function createAdminRoutes(pool: AccountPool, tracker: UsageTracker, cali
     const usage = tracker.getUsageByAccount();
     const usageMap = new Map(usage.map(u => [u.accountIndex, u]));
     const calibrationMap = calibrator.getLatest();
-
-    // 注入配额 hints 到 pool
-    const quotaHints = new Map<number, number>();
-    for (const [index, data] of calibrationMap) {
-      const pcts = extractQuotaPercentages(data.quotas);
-      const max = Math.max(pcts.monthly ?? 0, pcts.fiveHour ?? 0, pcts.weekly ?? 0);
-      quotaHints.set(index, max);
-    }
-    pool.setQuotaHints(quotaHints);
 
     const merged = accounts.map(a => {
       const calData = calibrationMap.get(a.index);
