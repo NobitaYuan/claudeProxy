@@ -103,14 +103,17 @@ export class AccountPool {
 
     let best: Account | null = null;
     let bestCount = Infinity;
+    let bestQuota = Infinity;
     let anyCandidate = false;
     for (const acc of this.accounts) {
       if (acc.status !== 'active' || isQuotaExceeded(acc)) continue;
       anyCandidate = true;
       const count = sessionCounts[acc.index];
-      if (count < bestCount) {
+      const quota = this.quotaHints.get(acc.index) ?? 0;
+      if (count < bestCount || (count === bestCount && quota < bestQuota)) {
         best = acc;
         bestCount = count;
+        bestQuota = quota;
       }
     }
 
@@ -119,9 +122,11 @@ export class AccountPool {
       for (const acc of this.accounts) {
         if (acc.status !== 'active') continue;
         const count = sessionCounts[acc.index];
-        if (count < bestCount) {
+        const quota = this.quotaHints.get(acc.index) ?? 0;
+        if (count < bestCount || (count === bestCount && quota < bestQuota)) {
           best = acc;
           bestCount = count;
+          bestQuota = quota;
         }
       }
     }

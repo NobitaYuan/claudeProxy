@@ -32,6 +32,7 @@ initDb();
 const tracker = new UsageTracker();
 const pool = new AccountPool();
 const calibrator = new Calibrator();
+calibrator.onQuotaChange((hints) => pool.setQuotaHints(hints));
 calibrator.start();
 const proxyHandler = createProxyHandler(pool, tracker);
 

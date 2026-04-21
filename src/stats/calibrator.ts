@@ -33,11 +33,17 @@ export class Calibrator {
   private timer: ReturnType<typeof setInterval> | null = null;
   private keys: string[];
   private baseUrl: string;
+  private onQuotaUpdate?: (hints: Map<number, number>) => void;
 
   constructor() {
     this.keys = config.glmApiKeys;
     const parsed = new URL(config.glmApiBase);
     this.baseUrl = `${parsed.protocol}//${parsed.host}`;
+  }
+
+  /** 注册配额更新回调，用于注入到 AccountPool */
+  onQuotaChange(cb: (hints: Map<number, number>) => void) {
+    this.onQuotaUpdate = cb;
   }
 
   start() {
@@ -94,15 +100,25 @@ export class Calibrator {
         created_at = datetime('now', 'localtime')
     `);
 
+    // 收集各 key 的最高配额百分比，注入到 AccountPool
+    const hints = new Map<number, number>();
     let successCount = 0;
     for (const r of results) {
       if (r.status === 'fulfilled' && r.value) {
         const d = r.value;
         upsert.run(dateStr, d.accountKeyIndex, d.upstreamTokens, d.upstreamCalls, d.quotas ? JSON.stringify(d.quotas) : null);
         successCount++;
+        // 取该 key 所有配额限制中的最高百分比
+        if (d.quotas?.limits.length) {
+          const maxPct = Math.max(...d.quotas.limits.map(l => l.percentage));
+          hints.set(d.accountKeyIndex, maxPct);
+        }
       }
     }
-    console.log(`[Calibrator] 上游数据已更新 | ${dateStr} | ${successCount}/${this.keys.length} 个 key 成功`);
+    if (hints.size > 0 && this.onQuotaUpdate) {
+      this.onQuotaUpdate(hints);
+    }
+    console.log(`[Calibrator] 上游数据已更新 | ${dateStr} | ${successCount}/${this.keys.length} 个 key 成功 | 配额: ${[...hints.entries()].map(([k, v]) => `#${k}=${v.toFixed(1)}%`).join(', ') || '无数据'}`);
   }
 
   private async fetchForKey(apiKey: string, index: number, start: Date, end: Date): Promise<KeyUpstreamData | null> {

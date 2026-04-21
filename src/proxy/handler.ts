@@ -88,7 +88,7 @@ export function createProxyHandler(pool: AccountPool, tracker: UsageTracker) {
     const sessionId = extractSessionId(parsedBody);
 
     const preview = formatConversationPreview(parsedBody);
-    console.log(`[Request] ${clientIp} | ${model} | session=${sessionId.slice(0, 8)}… | ${c.req.path}\n${preview}`);
+    console.log(`[Request] ${clientIp} | ${model} | session=${sessionId.slice(0, 12)}… | ${c.req.path}\n${preview}`);
 
     // 429 重试循环：每次从账户池取下一个账户，遇到限流则冷却该账户后换一个重试
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
