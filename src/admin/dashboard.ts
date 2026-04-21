@@ -112,7 +112,7 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
   .drawer-toggle { flex-shrink: 0; background: var(--accent); color: #fff; border: none; border-radius: var(--radius) 0 0 var(--radius); padding: 12px 6px; font-size: 12px; writing-mode: vertical-lr; cursor: pointer; letter-spacing: 2px; transition: background .15s; align-self: center; }
   .drawer-toggle:hover { background: var(--accent-hover); }
   .drawer { width: 0; overflow: hidden; background: var(--bg-card); border-left: 1px solid var(--border); transition: width .3s; display: flex; flex-direction: column; flex-shrink: 0; }
-  .drawer.open { width: 340px; }
+  .drawer.open { width: 360px; }
   .drawer-header { padding: 16px; border-bottom: 1px solid var(--border); font-size: 15px; font-weight: 600; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
   .drawer-body { flex: 1; overflow-y: auto; padding: 8px 16px; }
   .log-list { font-size: 13px; font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace; }
@@ -169,9 +169,9 @@ export const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
     <div class="main-content">
       <div class="container">
         <div class="summary-grid" id="summary-cards">
-          <div class="card"><div class="card-label"><span class="status-dot" id="s-dot"></span>总请求数（本地）</div><div class="card-value" id="s-requests">-</div></div>
           <div class="card"><div class="card-label">今日总Token</div><div class="card-value" id="s-tokens">-</div></div>
-          <div class="card"><div class="card-label">独立客户端</div><div class="card-value" id="s-clients">-</div></div>
+          <div class="card"><div class="card-label"><span class="status-dot" id="s-dot"></span>总请求数</div><div class="card-value" id="s-requests">-</div></div>
+          <div class="card"><div class="card-label">客户端数</div><div class="card-value" id="s-clients">-</div></div>
         </div>
         <div class="key-grid" id="key-cards"></div>
         <div class="chart-card">

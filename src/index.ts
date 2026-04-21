@@ -6,6 +6,7 @@ import { AccountPool } from './proxy/accountPool.js';
 import { createProxyHandler } from './proxy/handler.js';
 import { initDb } from './stats/db.js';
 import { UsageTracker } from './stats/tracker.js';
+import { Calibrator } from './stats/calibrator.js';
 import { createAdminRoutes } from './admin/routes.js';
 import { DASHBOARD_HTML } from './admin/dashboard.js';
 import { eventBus } from './admin/events.js';
@@ -30,6 +31,8 @@ function getLocalIPs(): string[] {
 initDb();
 const tracker = new UsageTracker();
 const pool = new AccountPool();
+const calibrator = new Calibrator();
+calibrator.start();
 const proxyHandler = createProxyHandler(pool, tracker);
 
 const app = new Hono<Env>();
@@ -51,7 +54,7 @@ app.get('/admin/', (c) => c.redirect('/admin/dashboard'));
 app.get('/admin/events', (c) => eventBus.handler(c));
 
 // Admin API routes
-app.route('/admin', createAdminRoutes(pool, tracker));
+app.route('/admin', createAdminRoutes(pool, tracker, calibrator));
 
 // Proxy: forward all /v1/* requests
 app.all('/v1/*', proxyHandler);
