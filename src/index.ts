@@ -66,3 +66,18 @@ console.log('  ANTHROPIC_API_KEY=placeholder');
 console.log('');
 
 serve({ fetch: app.fetch, port: config.port });
+
+// 优雅关闭
+process.on('SIGINT', () => {
+  console.log('\n[Shutdown] 收到 SIGINT，正在优雅关闭...');
+  requestLog.stop();
+  upstreamSync.stop();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n[Shutdown] 收到 SIGTERM，正在优雅关闭...');
+  requestLog.stop();
+  upstreamSync.stop();
+  process.exit(0);
+});

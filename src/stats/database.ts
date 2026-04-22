@@ -4,6 +4,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 let db: Database.Database;
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 小时
+const RETENTION_DAYS = 90;
+
+function cleanupOldRequests() {
+  if (!db) return;
+  try {
+    const result = db.prepare("DELETE FROM requests WHERE created_at < datetime('now', '-' || ? || ' days', 'localtime')").run(RETENTION_DAYS);
+    if (result.changes > 0) {
+      console.log(`[DB] 清理 ${result.changes} 条 ${RETENTION_DAYS} 天前的请求记录`);
+    }
+  } catch (err) {
+    console.error('[DB] 清理旧记录失败:', err);
+  }
+}
 
 export function initDb(): Database.Database {
   const dir = path.dirname(config.dbPath);
@@ -55,6 +71,7 @@ export function initDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_requests_client_ip ON requests(client_ip);
     CREATE INDEX IF NOT EXISTS idx_requests_created_at ON requests(created_at);
+    CREATE INDEX IF NOT EXISTS idx_requests_account ON requests(account_key_index);
 
     CREATE TABLE IF NOT EXISTS calibrations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,10 +85,25 @@ export function initDb(): Database.Database {
     );
   `);
 
+  // 启动定时清理任务
+  cleanupOldRequests(); // 启动时先执行一次
+  cleanupTimer = setInterval(cleanupOldRequests, CLEANUP_INTERVAL_MS);
+
   return db;
 }
 
 export function getDb(): Database.Database {
   if (!db) throw new Error('Database not initialized');
   return db;
+}
+
+export function closeDb(): void {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
+  if (db) {
+    db.close();
+    db = undefined as unknown as Database.Database;
+  }
 }

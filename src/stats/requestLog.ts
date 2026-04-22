@@ -8,8 +8,12 @@ export interface UsageRecord {
   statusCode: number;
 }
 
+const FLUSH_INTERVAL_MS = 3000;
+
 export class RequestLog {
   private insertStmt: BetterSqlite3.Statement;
+  private buffer: UsageRecord[] = [];
+  private flushTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     const db = getDb();
@@ -17,14 +21,44 @@ export class RequestLog {
       INSERT INTO requests (client_ip, model, account_key_index, status_code)
       VALUES (?, ?, ?, ?)
     `);
+    this.flushTimer = setInterval(() => this.flush(), FLUSH_INTERVAL_MS);
   }
 
   record(r: UsageRecord) {
-    try {
-      this.insertStmt.run(r.clientIp, r.model, r.accountIndex, r.statusCode);
-    } catch (err) {
-      console.error('[Tracker] Failed to record:', err);
+    this.buffer.push(r);
+    // 如果 buffer 积累过多（如超过 500 条），立即触发 flush 防止内存膨胀
+    if (this.buffer.length >= 500) {
+      this.flush();
     }
+  }
+
+  /** 将 buffer 中的记录批量写入数据库 */
+  flush() {
+    if (this.buffer.length === 0) return;
+    const batch = this.buffer;
+    this.buffer = [];
+
+    try {
+      const db = getDb();
+      db.transaction(() => {
+        for (const r of batch) {
+          this.insertStmt.run(r.clientIp, r.model, r.accountIndex, r.statusCode);
+        }
+      })();
+    } catch (err) {
+      console.error('[Tracker] 批量写入失败，保留数据待下次重试:', err);
+      // 将失败记录放回 buffer 尾部，避免丢失
+      this.buffer.push(...batch);
+    }
+  }
+
+  /** 停止定时器并刷盘剩余数据 */
+  stop() {
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = null;
+    }
+    this.flush();
   }
 
   /** Get usage grouped by client IP within last N days */

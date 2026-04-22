@@ -28,12 +28,14 @@ export interface KeyUpstreamData {
   quotas: QuotaLimit | null;
 }
 
-const FETCH_INTERVAL_MS = 30 * 60 * 1000;
+const FETCH_INTERVAL_MS = 5 * 60 * 1000; // 5 分钟
+const FETCH_TIMEOUT_MS = 30 * 1000; // 30 秒
 
 export class UpstreamSync {
   private timer: ReturnType<typeof setInterval> | null = null;
   private keys: string[];
   private baseUrl: string;
+  private quotaCache = new Map<number, number>();
 
   constructor() {
     this.keys = config.glmApiKeys;
@@ -41,17 +43,9 @@ export class UpstreamSync {
     this.baseUrl = `${parsed.protocol}//${parsed.host}`;
   }
 
-  /** 从 DB 读取各 key 的 5 小时配额百分比，供 AccountPool 调度使用 */
+  /** 从内存缓存读取各 key 的 5 小时配额百分比，供 AccountPool 调度使用 */
   getQuotaHints(): Map<number, number> {
-    const hints = new Map<number, number>();
-    for (const [index, data] of this.getLatest()) {
-      if (!data.quotas?.limits.length) continue;
-      const fiveHour = data.quotas.limits.find(l => l.type === 'TOKENS_LIMIT' && l.unit === 3);
-      hints.set(index, fiveHour
-        ? fiveHour.percentage
-        : Math.max(...data.quotas.limits.map(l => l.percentage)));
-    }
-    return hints;
+    return new Map(this.quotaCache);
   }
 
   start() {
@@ -114,6 +108,13 @@ export class UpstreamSync {
         const d = r.value;
         upsert.run(dateStr, d.accountKeyIndex, d.upstreamTokens, d.upstreamCalls, d.quotas ? JSON.stringify(d.quotas) : null);
         successCount++;
+        // 更新内存配额缓存
+        if (d.quotas?.limits.length) {
+          const fiveHour = d.quotas.limits.find(l => l.type === 'TOKENS_LIMIT' && l.unit === 3);
+          this.quotaCache.set(d.accountKeyIndex, fiveHour
+            ? fiveHour.percentage
+            : Math.max(...d.quotas.limits.map(l => l.percentage)));
+        }
       }
     }
     console.log(`[UpstreamSync] 用量数据已更新 | ${dateStr} | ${successCount}/${this.keys.length} 个 key 成功`);
@@ -138,15 +139,30 @@ export class UpstreamSync {
     }
   }
 
+  private async fetchWithTimeout(url: string, headers: Record<string, string>): Promise<Response | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { headers, signal: controller.signal });
+      return res;
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        console.error(`[UpstreamSync] 请求超时: ${url}`);
+      }
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   private async fetchModelUsage(apiKey: string, start: Date, end: Date): Promise<UpstreamModelUsage | null> {
     const fmt = (d: Date) => {
       const p = (n: number) => String(n).padStart(2, '0');
       return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
     };
     const url = `${this.baseUrl}/api/monitor/usage/model-usage?startTime=${encodeURIComponent(fmt(start))}&endTime=${encodeURIComponent(fmt(end))}`;
-    const res = await fetch(url, {
-      headers: { 'Authorization': apiKey, 'Content-Type': 'application/json' },
-    });
+    const res = await this.fetchWithTimeout(url, { 'Authorization': apiKey, 'Content-Type': 'application/json' });
+    if (!res) return null;
     if (!res.ok) {
       console.error(`[UpstreamSync] model-usage API 返回 ${res.status}`);
       return null;
@@ -156,16 +172,11 @@ export class UpstreamSync {
   }
 
   private async fetchQuotaLimit(apiKey: string): Promise<QuotaLimit | null> {
-    try {
-      const url = `${this.baseUrl}/api/monitor/usage/quota/limit`;
-      const res = await fetch(url, {
-        headers: { 'Authorization': apiKey, 'Content-Type': 'application/json' },
-      });
-      if (!res.ok) return null;
-      const json = await res.json() as { success: boolean; data: QuotaLimit };
-      return json.success ? json.data : null;
-    } catch {
-      return null;
-    }
+    const url = `${this.baseUrl}/api/monitor/usage/quota/limit`;
+    const res = await this.fetchWithTimeout(url, { 'Authorization': apiKey, 'Content-Type': 'application/json' });
+    if (!res) return null;
+    if (!res.ok) return null;
+    const json = await res.json() as { success: boolean; data: QuotaLimit };
+    return json.success ? json.data : null;
   }
 }
