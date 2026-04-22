@@ -4,6 +4,14 @@ import type { RequestLog } from '../stats/requestLog.js';
 import type { UpstreamSync, KeyUpstreamData } from '../stats/upstreamSync.js';
 import { config } from '../config.js';
 
+const MAX_QUERY_DAYS = 90;
+
+function parseDays(value: string | undefined): number {
+  const parsed = parseInt(value || '7', 10);
+  if (isNaN(parsed) || parsed <= 0) return 7;
+  return Math.min(parsed, MAX_QUERY_DAYS);
+}
+
 /** 从配额 limits 中提取三类百分比 */
 function extractQuotaPercentages(quotas: KeyUpstreamData['quotas']): { monthly: number | null; fiveHour: number | null; weekly: number | null } {
   const result = { monthly: null as number | null, fiveHour: null as number | null, weekly: null as number | null };
@@ -54,13 +62,13 @@ export function createAdminRoutes(pool: AccountBalancer, tracker: RequestLog, ca
 
   // Usage by client IP
   admin.get('/usage', (c) => {
-    const days = parseInt(c.req.query('days') || '7');
+    const days = parseDays(c.req.query('days'));
     return c.json({ usage: tracker.getUsageByIp(days) });
   });
 
   // Overall summary
   admin.get('/usage/summary', (c) => {
-    const days = parseInt(c.req.query('days') || '7');
+    const days = parseDays(c.req.query('days'));
     return c.json({
       summary: tracker.getSummary(days),
       daily: tracker.getDailyBreakdown(days),

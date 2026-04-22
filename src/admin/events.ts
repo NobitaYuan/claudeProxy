@@ -12,6 +12,8 @@ export interface ProxyEvent {
   contentTypes: string[];
 }
 
+const MAX_SSE_CLIENTS = 100;
+
 class DashboardEventBus {
   private emitter = new EventEmitter();
   private clients: Set<{ write: (data: string) => void }> = new Set();
@@ -33,6 +35,10 @@ class DashboardEventBus {
     const token = c.req.query('token');
     if (!token || token !== config.adminToken) {
       return c.json({ error: 'unauthorized' }, 401);
+    }
+
+    if (this.clients.size >= MAX_SSE_CLIENTS) {
+      return c.json({ error: 'too_many_connections', message: `SSE 客户端上限 ${MAX_SSE_CLIENTS} 已满` }, 503);
     }
 
     const stream = new ReadableStream({

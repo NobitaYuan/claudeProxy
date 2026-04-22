@@ -91,7 +91,7 @@ export class UpstreamSync {
   private async run() {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const dateStr = todayStart.toISOString().slice(0, 10);
+    const dateStr = `${todayStart.getFullYear()}-${String(todayStart.getMonth() + 1).padStart(2, '0')}-${String(todayStart.getDate()).padStart(2, '0')}`;
 
     const results = await Promise.allSettled(
       this.keys.map((key, index) => this.fetchForKey(key, index, todayStart, now))

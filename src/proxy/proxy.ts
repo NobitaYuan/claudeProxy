@@ -16,6 +16,31 @@ type Env = { Variables: { clientIp: string } };
 // 429（限流）时最多重试的账户切换次数
 const MAX_RETRIES = 3;
 
+const MAX_RETRY_AFTER_MS = 60 * 60 * 1000; // 最大冷却 1 小时
+
+/** 解析 Retry-After 头，支持秒数或 HTTP-date 格式 */
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+
+  // 纯数字秒数
+  const seconds = parseInt(trimmed, 10);
+  if (!isNaN(seconds) && String(seconds) === trimmed) {
+    if (seconds <= 0) return undefined;
+    return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS);
+  }
+
+  // HTTP-date 格式
+  const date = new Date(trimmed);
+  if (!isNaN(date.getTime())) {
+    const delta = date.getTime() - Date.now();
+    if (delta <= 0) return undefined;
+    return Math.min(delta, MAX_RETRY_AFTER_MS);
+  }
+
+  return undefined;
+}
+
 // 提取请求中所有 content block 的去重类型列表
 function extractContentTypes(body: MessageCreateParams): string[] {
   const types = new Set<string>();
@@ -83,7 +108,7 @@ export function createProxyHandler(pool: AccountBalancer, tracker: RequestLog) {
         // 上游返回 429：对该账户执行冷却，跳到下一轮循环换账户重试
         if (upstream.status === 429) {
           const retryAfter = upstream.headers.get('retry-after');
-          const cooldownMs = retryAfter ? parseInt(retryAfter) * 1000 : undefined;
+          const cooldownMs = parseRetryAfter(retryAfter);
           pool.cooldown(account, cooldownMs);
           console.warn(`[Proxy] 429 from Account #${account.index}, retrying...`);
           continue;
@@ -126,23 +151,32 @@ function streamResponse(
   contentTypes: string[],
 ) {
   const reader = upstream.body!.getReader();
+  let recorded = false;
+
+  const recordOnce = (statusCode: number) => {
+    if (recorded) return;
+    recorded = true;
+    recordUsage(tracker, account, clientIp, model, statusCode, shortSid, contentTypes);
+  };
 
   const stream = new ReadableStream({
     async pull(controller) {
       try {
         const { done, value } = await reader.read();
         if (done) {
-          recordUsage(tracker, account, clientIp, model, 200, shortSid, contentTypes);
+          recordOnce(200);
           controller.close();
           return;
         }
         controller.enqueue(value);
       } catch (err) {
         console.error('[Proxy] Stream error:', err);
+        recordOnce(502);
         controller.error(err);
       }
     },
     cancel() {
+      recordOnce(499);
       reader.cancel();
     },
   });
