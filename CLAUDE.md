@@ -106,11 +106,13 @@ Claude Code 发送 Anthropic Messages API 请求，关键特征：
 - ESM 模块，import 路径必须带 `.js` 后缀
 - 注释和 log 使用中文
 - 环境变量统一在 `src/config.ts` 管理
+- 
 ## 提交代码
 
 不要在commit信息里写claudeCode水印！！！
 不要在commit信息里写claudeCode水印！！！
 不要在commit信息里写claudeCode水印！！！
+不要加：Co-Authored-By
 
 ## Code Quality
 
