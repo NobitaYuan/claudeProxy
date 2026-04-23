@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import type { AccountBalancer, Account } from './accountBalancer.js';
-import { config } from '../config.js';
 import type { RequestLog } from '../stats/requestLog.js';
+import type { Provider } from '../providers/index.js';
 import { eventBus } from '../admin/events.js';
 import type {
   MessageCreateParams,
@@ -65,7 +65,7 @@ function extractSessionId(body: MessageCreateParams): string {
   }
 }
 
-export function createProxyHandler(pool: AccountBalancer, tracker: RequestLog) {
+export function createProxyHandler(pool: AccountBalancer, tracker: RequestLog, provider: Provider) {
   return async (c: Context<Env>) => {
     const clientIp = c.get('clientIp');
     const body = await c.req.raw.clone().text();
@@ -89,12 +89,12 @@ export function createProxyHandler(pool: AccountBalancer, tracker: RequestLog) {
         eventBus.emitProxyEvent({ accountIndex: account.index, clientIp, model, sessionId: shortSid, type: 'bind', statusCode: 0, contentTypes });
       }
 
-      const url = `${config.glmApiBase}${c.req.path}`;
+      const url = `${provider.apiBase}${c.req.path}`;
 
       // 复制原始请求头，替换为当前账户的 API Key，并清除代理转发的 IP 头
       const headers = new Headers(c.req.raw.headers);
-      headers.set('authorization', `Bearer ${account.apiKey}`);
-      headers.set('host', new URL(config.glmApiBase).host);
+      headers.set('authorization', provider.buildAuthHeader(account.apiKey));
+      headers.set('host', new URL(provider.apiBase).host);
       headers.delete('x-forwarded-for');
       headers.delete('x-real-ip');
 

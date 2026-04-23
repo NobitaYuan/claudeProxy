@@ -35,7 +35,7 @@ function createMockTracker(): RequestLog {
 function createMockCalibrator(): UpstreamSync {
   return {
     getLatest: vi.fn(() => new Map([
-      [0, { accountKeyIndex: 0, upstreamTokens: 1000, upstreamCalls: 10, quotas: { level: 'free', limits: [{ type: 'TOKENS_LIMIT', unit: 3, percentage: 50 }] } }],
+      [0, { accountKeyIndex: 0, upstreamTokens: 1000, upstreamCalls: 10, quotas: [{ label: '5小时 Token', percentage: 50 }] }],
     ])),
     getQuotaHints: vi.fn(() => new Map()),
     start: vi.fn(),
@@ -93,7 +93,8 @@ describe('Admin Routes', () => {
     expect(json.accounts).toHaveLength(2);
     expect(json.accounts[0].requestCount).toBe(8);
     expect(json.accounts[0].todayUpstreamTokens).toBe(1000);
-    expect(json.accounts[0].quotas.fiveHour).toBe(50);
+    // quotas 现在是 QuotaDisplay[] 数组
+    expect(json.accounts[0].quotas).toEqual([{ label: '5小时 Token', percentage: 50 }]);
     expect(json.accounts[1].status).toBe('cooldown');
     expect(json.accounts[1].cooldownRemaining).toBe(30000);
   });

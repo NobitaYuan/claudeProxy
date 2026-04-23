@@ -23,10 +23,10 @@ export class AccountBalancer {
 
   constructor(upstreamSync: UpstreamSync) {
     this.upstreamSync = upstreamSync;
-    if (config.glmApiKeys.length === 0) {
-      throw new Error('GLM_API_KEYS is empty. Configure at least one API key.');
+    if (config.apiKeys.length === 0) {
+      throw new Error('No API keys configured. Set API_KEYS or GLM_API_KEYS env var.');
     }
-    this.accounts = config.glmApiKeys.map((key, i) => ({
+    this.accounts = config.apiKeys.map((key, i) => ({
       index: i,
       apiKey: key,
       status: 'active',

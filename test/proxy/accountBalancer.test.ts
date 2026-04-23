@@ -15,14 +15,14 @@ describe('AccountBalancer', () => {
   let originalSessionTimeoutMs: number;
 
   beforeEach(() => {
-    originalKeys = config.glmApiKeys;
+    originalKeys = config.apiKeys;
     originalCooldownMs = config.cooldownMs;
     originalSessionTimeoutMs = config.sessionTimeoutMs;
     vi.useFakeTimers();
   });
 
   afterEach(() => {
-    config.glmApiKeys = originalKeys;
+    config.apiKeys = originalKeys;
     config.cooldownMs = originalCooldownMs;
     config.sessionTimeoutMs = originalSessionTimeoutMs;
     vi.useRealTimers();
@@ -30,12 +30,12 @@ describe('AccountBalancer', () => {
   });
 
   it('无 API key 时抛出异常', () => {
-    config.glmApiKeys = [];
-    expect(() => new AccountBalancer(createMockUpstreamSync())).toThrow('GLM_API_KEYS is empty');
+    config.apiKeys = [];
+    expect(() => new AccountBalancer(createMockUpstreamSync())).toThrow('No API keys configured');
   });
 
   it('新 session 绑定到配额最低的账户（差距 >5%）', () => {
-    config.glmApiKeys = ['key0', 'key1'];
+    config.apiKeys = ['key0', 'key1'];
     const balancer = new AccountBalancer(createMockUpstreamSync(new Map([[0, 10], [1, 20]])));
     const acc = balancer.getNext('session-1');
     expect(acc).not.toBeNull();
@@ -43,7 +43,7 @@ describe('AccountBalancer', () => {
   });
 
   it('已有 session 复用绑定账户', () => {
-    config.glmApiKeys = ['key0', 'key1'];
+    config.apiKeys = ['key0', 'key1'];
     const balancer = new AccountBalancer(createMockUpstreamSync());
     const first = balancer.getNext('session-1');
     const second = balancer.getNext('session-1');
@@ -51,7 +51,7 @@ describe('AccountBalancer', () => {
   });
 
   it('配额差距 ≤5% 时按 session 绑定数分配', () => {
-    config.glmApiKeys = ['key0', 'key1'];
+    config.apiKeys = ['key0', 'key1'];
     const balancer = new AccountBalancer(createMockUpstreamSync(new Map([[0, 50], [1, 52]])));
     balancer.getNext('s1'); // 绑定到 0（配额更低）
     const acc = balancer.getNext('s2');
@@ -60,7 +60,7 @@ describe('AccountBalancer', () => {
   });
 
   it('绑定的账户冷却时自动解绑重新分配', () => {
-    config.glmApiKeys = ['key0', 'key1'];
+    config.apiKeys = ['key0', 'key1'];
     const balancer = new AccountBalancer(createMockUpstreamSync());
     const first = balancer.getNext('s1');
     expect(first!.index).toBe(0);
@@ -71,7 +71,7 @@ describe('AccountBalancer', () => {
   });
 
   it('冷却账户到时间后自动恢复', () => {
-    config.glmApiKeys = ['key0'];
+    config.apiKeys = ['key0'];
     config.cooldownMs = 60000;
     const balancer = new AccountBalancer(createMockUpstreamSync());
     const acc = balancer.getNext('s1')!;
@@ -83,7 +83,7 @@ describe('AccountBalancer', () => {
   });
 
   it('所有账户都在冷却时返回 null', () => {
-    config.glmApiKeys = ['key0', 'key1'];
+    config.apiKeys = ['key0', 'key1'];
     const balancer = new AccountBalancer(createMockUpstreamSync());
     const acc0 = balancer.getNext('s1')!;
     const acc1 = balancer.getNext('s2')!;
@@ -93,7 +93,7 @@ describe('AccountBalancer', () => {
   });
 
   it('过期 session 被定时清理', () => {
-    config.glmApiKeys = ['key0'];
+    config.apiKeys = ['key0'];
     config.sessionTimeoutMs = 1800000;
     const balancer = new AccountBalancer(createMockUpstreamSync());
     balancer.start();
@@ -106,7 +106,7 @@ describe('AccountBalancer', () => {
   });
 
   it('getStatus 返回正确的账户状态统计', () => {
-    config.glmApiKeys = ['key0', 'key1'];
+    config.apiKeys = ['key0', 'key1'];
     const balancer = new AccountBalancer(createMockUpstreamSync());
     balancer.getNext('s1');
     balancer.getNext('s2');
@@ -121,7 +121,7 @@ describe('AccountBalancer', () => {
   });
 
   it('自定义冷却时长生效', () => {
-    config.glmApiKeys = ['key0'];
+    config.apiKeys = ['key0'];
     config.cooldownMs = 60000;
     const balancer = new AccountBalancer(createMockUpstreamSync());
     const acc = balancer.getNext('s1')!;
@@ -136,7 +136,7 @@ describe('AccountBalancer', () => {
 
   it('Retry-After HTTP-date 格式解析生效（通过 cooldown 验证）', () => {
     // 冷却时长直接传入毫秒数，此用例验证 cooldownUntil 计算正确
-    config.glmApiKeys = ['key0'];
+    config.apiKeys = ['key0'];
     const balancer = new AccountBalancer(createMockUpstreamSync());
     const acc = balancer.getNext('s1')!;
     const customMs = 120000;

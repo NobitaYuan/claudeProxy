@@ -2,8 +2,8 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AccountBalancer, Account } from '../../src/proxy/accountBalancer.js';
 import type { RequestLog } from '../../src/stats/requestLog.js';
+import type { Provider } from '../../src/providers/index.js';
 import { createProxyHandler } from '../../src/proxy/proxy.js';
-import { config } from '../../src/config.js';
 import { eventBus } from '../../src/admin/events.js';
 
 vi.mock('../../src/admin/events.js', () => ({
@@ -11,6 +11,17 @@ vi.mock('../../src/admin/events.js', () => ({
     emitProxyEvent: vi.fn(),
   },
 }));
+
+function createMockProvider(): Provider {
+  return {
+    name: 'test-provider',
+    apiBase: 'https://test.api.com/api/anthropic',
+    apiKeys: ['test-api-key-0', 'key1'],
+    buildAuthHeader: vi.fn((key: string) => `Bearer ${key}`),
+    fetchKeyUsage: vi.fn(),
+    extractPrimaryQuota: vi.fn(),
+  } as unknown as Provider;
+}
 
 function createMockPool(overrides?: Partial<AccountBalancer>): AccountBalancer {
   const defaultAccount: Account = { index: 0, apiKey: 'test-api-key-0', status: 'active', cooldownUntil: 0 };
@@ -55,18 +66,14 @@ function createRequestBody(overrides?: Record<string, unknown>) {
 }
 
 describe('createProxyHandler', () => {
-  let originalBase: string;
   let mockFetch: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    originalBase = config.glmApiBase;
-    config.glmApiBase = 'https://test.api.com';
     mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
   });
 
   afterEach(() => {
-    config.glmApiBase = originalBase;
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -76,7 +83,8 @@ describe('createProxyHandler', () => {
   it('正常 JSON 响应直接转发', async () => {
     const pool = createMockPool();
     const tracker = createMockTracker();
-    const app = createTestApp(createProxyHandler(pool, tracker));
+    const provider = createMockProvider();
+    const app = createTestApp(createProxyHandler(pool, tracker, provider));
 
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify({ ok: true }), {
@@ -101,7 +109,8 @@ describe('createProxyHandler', () => {
   it('从 metadata.user_id 正确提取 session_id', async () => {
     const pool = createMockPool();
     const tracker = createMockTracker();
-    const app = createTestApp(createProxyHandler(pool, tracker));
+    const provider = createMockProvider();
+    const app = createTestApp(createProxyHandler(pool, tracker, provider));
 
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify({ ok: true }), {
@@ -127,7 +136,6 @@ describe('createProxyHandler', () => {
 
     const pool = createMockPool({
       getNext: vi.fn(() => {
-        // 模拟真实行为：account0 被 cooldown 后返回 account1
         if (accounts[0].status === 'cooldown') return accounts[1];
         return accounts[0];
       }),
@@ -137,7 +145,8 @@ describe('createProxyHandler', () => {
       }),
     });
     const tracker = createMockTracker();
-    const app = createTestApp(createProxyHandler(pool, tracker));
+    const provider = createMockProvider();
+    const app = createTestApp(createProxyHandler(pool, tracker, provider));
 
     mockFetch
       .mockResolvedValueOnce(
@@ -179,7 +188,8 @@ describe('createProxyHandler', () => {
       }),
     });
     const tracker = createMockTracker();
-    const app = createTestApp(createProxyHandler(pool, tracker));
+    const provider = createMockProvider();
+    const app = createTestApp(createProxyHandler(pool, tracker, provider));
 
     const futureDate = new Date(Date.now() + 30000).toUTCString();
     mockFetch
@@ -202,7 +212,6 @@ describe('createProxyHandler', () => {
     expect(res.status).toBe(200);
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(pool.cooldown).toHaveBeenCalledTimes(1);
-    // cooldown 应被传入约 30s 的毫秒数（允许 1s 误差）
     const cooldownMs = (pool.cooldown as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(cooldownMs).toBeGreaterThan(28000);
     expect(cooldownMs).toBeLessThanOrEqual(30000);
@@ -214,7 +223,8 @@ describe('createProxyHandler', () => {
       cooldown: vi.fn(),
     });
     const tracker = createMockTracker();
-    const app = createTestApp(createProxyHandler(pool, tracker));
+    const provider = createMockProvider();
+    const app = createTestApp(createProxyHandler(pool, tracker, provider));
 
     mockFetch.mockResolvedValue(
       new Response('', { status: 429, headers: { 'retry-after': '1' } }),
@@ -237,7 +247,8 @@ describe('createProxyHandler', () => {
       getNext: vi.fn(() => ({ index: 0, apiKey: 'key0', status: 'active' as const, cooldownUntil: 0 })),
     });
     const tracker = createMockTracker();
-    const app = createTestApp(createProxyHandler(pool, tracker));
+    const provider = createMockProvider();
+    const app = createTestApp(createProxyHandler(pool, tracker, provider));
 
     mockFetch.mockRejectedValue(new Error('network down'));
 
@@ -257,7 +268,8 @@ describe('createProxyHandler', () => {
   it('SSE 流式响应正确转发', async () => {
     const pool = createMockPool();
     const tracker = createMockTracker();
-    const app = createTestApp(createProxyHandler(pool, tracker));
+    const provider = createMockProvider();
+    const app = createTestApp(createProxyHandler(pool, tracker, provider));
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -290,7 +302,8 @@ describe('createProxyHandler', () => {
   it('请求头正确处理', async () => {
     const pool = createMockPool();
     const tracker = createMockTracker();
-    const app = createTestApp(createProxyHandler(pool, tracker));
+    const provider = createMockProvider();
+    const app = createTestApp(createProxyHandler(pool, tracker, provider));
 
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify({ ok: true }), {
@@ -323,7 +336,8 @@ describe('createProxyHandler', () => {
       getNext: vi.fn(() => null),
     });
     const tracker = createMockTracker();
-    const app = createTestApp(createProxyHandler(pool, tracker));
+    const provider = createMockProvider();
+    const app = createTestApp(createProxyHandler(pool, tracker, provider));
 
     const res = await app.request('/v1/messages', {
       method: 'POST',
@@ -341,7 +355,8 @@ describe('createProxyHandler', () => {
       hasSession: vi.fn(() => false),
     });
     const tracker = createMockTracker();
-    const app = createTestApp(createProxyHandler(pool, tracker));
+    const provider = createMockProvider();
+    const app = createTestApp(createProxyHandler(pool, tracker, provider));
 
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify({ ok: true }), {
@@ -362,7 +377,7 @@ describe('createProxyHandler', () => {
       expect.objectContaining({
         type: 'bind',
         accountIndex: 0,
-        sessionId: 'test-session', // 前 12 位
+        sessionId: 'test-session',
         model: 'claude-3-opus-20240229',
         contentTypes: ['text'],
       }),

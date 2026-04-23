@@ -342,12 +342,7 @@
       const badge = a.status === 'active'
         ? '<span class="badge badge-active">活跃</span>'
         : '<span class="badge badge-cooldown">冷却中</span>';
-      const q = a.quotas || {};
-      const quotasHtml = buildQuotaBars([
-        { label: '5小时 Token', pct: q.fiveHour },
-        { label: '周度 Token', pct: q.weekly },
-        { label: '月度 MCP', pct: q.monthly },
-      ]);
+      const quotasHtml = buildQuotaBars((a.quotas || []).map(q => ({ label: q.label, pct: q.percentage })));
       return '<div class="key-card">' +
         '<div class="key-card-header">' +
           '<span class="key-card-title">Key #' + a.index + ' (...' + a.apiKeySuffix + ')</span>' +

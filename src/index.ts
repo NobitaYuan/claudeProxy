@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
+import { createProvider } from './providers/index.js';
 import { AccountBalancer } from './proxy/accountBalancer.js';
 import { createProxyHandler } from './proxy/proxy.js';
 import { initDb } from './stats/database.js';
@@ -11,18 +12,19 @@ import { DASHBOARD_HTML } from './admin/dashboard.js';
 import { eventBus } from './admin/events.js';
 import { getLocalIPs } from './utils/tools.js';
 
-// Init DB
+// 初始化
 initDb();
 const requestLog = new RequestLog();
-const upstreamSync = new UpstreamSync();
+const provider = createProvider(config.providerType, config.apiBase, config.apiKeys);
+const upstreamSync = new UpstreamSync(provider);
 const accountBalancer = new AccountBalancer(upstreamSync);
 accountBalancer.start();
 upstreamSync.start();
-const proxyHandler = createProxyHandler(accountBalancer, requestLog);
+const proxyHandler = createProxyHandler(accountBalancer, requestLog, provider);
 
 const app = new Hono<{ Variables: { clientIp: string } }>();
 
-// Inject client IP into context
+// 注入客户端 IP
 app.use('*', async (c, next) => {
   const incoming = (c.env as any)?.incoming;
   const ip = incoming?.socket?.remoteAddress?.replace(/::ffff:/, '') || 'unknown';
@@ -30,27 +32,28 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// Health check
-app.get('/health', (c) => c.json({ status: 'ok', accounts: config.glmApiKeys.length }));
+// 健康检查
+app.get('/health', (c) => c.json({ status: 'ok', accounts: config.apiKeys.length, provider: provider.name }));
 
 // 管理面板页面（无需认证）
 app.get('/admin/dashboard', (c) => c.html(DASHBOARD_HTML));
 app.get('/admin/', (c) => c.redirect('/admin/dashboard'));
 app.get('/admin/events', (c) => eventBus.handler(c));
 
-// Admin API routes
+// Admin API
 app.route('/admin', createAdminRoutes(accountBalancer, requestLog, upstreamSync));
 
-// Proxy: forward all /v1/* requests
+// 代理：转发所有 /v1/* 请求
 app.all('/v1/*', proxyHandler);
 
-// Start server
+// 启动服务
 const ips = getLocalIPs();
 console.log('');
 console.log('=== ClaudeProxy Started ===');
 console.log(`  Port:     ${config.port}`);
-console.log(`  Accounts: ${config.glmApiKeys.length}`);
-console.log(`  Upstream: ${config.glmApiBase}`);
+console.log(`  Provider: ${provider.name}`);
+console.log(`  Accounts: ${config.apiKeys.length}`);
+console.log(`  Upstream: ${config.apiBase}`);
 console.log(`  IPs:      ${ips.join(', ')}`);
 console.log('');
 console.log('Dashboard:');

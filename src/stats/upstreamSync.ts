@@ -1,49 +1,25 @@
-import { config } from '../config.js';
 import { getDb } from './database.js';
-
-interface UpstreamModelUsage {
-  totalUsage: {
-    totalModelCallCount: number;
-    totalTokensUsage: number;
-  };
-}
-
-export interface QuotaLimit {
-  limits: {
-    type: string;
-    percentage: number;
-    unit?: number;
-    currentValue?: number;
-    usage?: number;
-    usageDetails?: { modelCode: string; usage: number }[];
-    nextResetTime: number;
-  }[];
-  level: string;
-}
+import type { Provider, QuotaDisplay } from '../providers/index.js';
 
 export interface KeyUpstreamData {
   accountKeyIndex: number;
   upstreamTokens: number;
   upstreamCalls: number;
-  quotas: QuotaLimit | null;
+  quotas: QuotaDisplay[];
 }
 
 const FETCH_INTERVAL_MS = 5 * 60 * 1000; // 5 分钟
-const FETCH_TIMEOUT_MS = 30 * 1000; // 30 秒
 
 export class UpstreamSync {
   private timer: ReturnType<typeof setInterval> | null = null;
-  private keys: string[];
-  private baseUrl: string;
+  private provider: Provider;
   private quotaCache = new Map<number, number>();
 
-  constructor() {
-    this.keys = config.glmApiKeys;
-    const parsed = new URL(config.glmApiBase);
-    this.baseUrl = `${parsed.protocol}//${parsed.host}`;
+  constructor(provider: Provider) {
+    this.provider = provider;
   }
 
-  /** 从内存缓存读取各 key 的 5 小时配额百分比，供 AccountPool 调度使用 */
+  /** 从内存缓存读取各 key 的主配额百分比，供 AccountBalancer 调度使用 */
   getQuotaHints(): Map<number, number> {
     return new Map(this.quotaCache);
   }
@@ -51,7 +27,7 @@ export class UpstreamSync {
   start() {
     this.run();
     this.timer = setInterval(() => this.run(), FETCH_INTERVAL_MS);
-    console.log(`[UpstreamSync] 定时拉取上游用量已启动，${this.keys.length} 个 key，间隔 ${FETCH_INTERVAL_MS / 1000}s`);
+    console.log(`[UpstreamSync] 定时拉取已启动，提供者: ${this.provider.name}，${this.provider.apiKeys.length} 个 key，间隔 ${FETCH_INTERVAL_MS / 1000}s`);
   }
 
   stop() {
@@ -76,7 +52,7 @@ export class UpstreamSync {
         accountKeyIndex: row.account_key_index,
         upstreamTokens: row.upstream_tokens,
         upstreamCalls: row.upstream_calls,
-        quotas: row.quotas ? JSON.parse(row.quotas) : null,
+        quotas: row.quotas ? JSON.parse(row.quotas) : [],
       });
     }
     return result;
@@ -88,7 +64,9 @@ export class UpstreamSync {
     const dateStr = `${todayStart.getFullYear()}-${String(todayStart.getMonth() + 1).padStart(2, '0')}-${String(todayStart.getDate()).padStart(2, '0')}`;
 
     const results = await Promise.allSettled(
-      this.keys.map((key, index) => this.fetchForKey(key, index, todayStart, now))
+      this.provider.apiKeys.map((key, index) =>
+        this.provider.fetchKeyUsage(key, index, todayStart, now)
+      )
     );
 
     const db = getDb();
@@ -106,77 +84,15 @@ export class UpstreamSync {
     for (const r of results) {
       if (r.status === 'fulfilled' && r.value) {
         const d = r.value;
-        upsert.run(dateStr, d.accountKeyIndex, d.upstreamTokens, d.upstreamCalls, d.quotas ? JSON.stringify(d.quotas) : null);
+        upsert.run(dateStr, d.accountKeyIndex, d.upstreamTokens, d.upstreamCalls, JSON.stringify(d.quotas));
         successCount++;
         // 更新内存配额缓存
-        if (d.quotas?.limits.length) {
-          const fiveHour = d.quotas.limits.find(l => l.type === 'TOKENS_LIMIT' && l.unit === 3);
-          this.quotaCache.set(d.accountKeyIndex, fiveHour
-            ? fiveHour.percentage
-            : Math.max(...d.quotas.limits.map(l => l.percentage)));
+        const primaryQuota = this.provider.extractPrimaryQuota(d.quotas);
+        if (primaryQuota !== undefined) {
+          this.quotaCache.set(d.accountKeyIndex, primaryQuota);
         }
       }
     }
-    console.log(`[UpstreamSync] 用量数据已更新 | ${dateStr} | ${successCount}/${this.keys.length} 个 key 成功`);
-  }
-
-  private async fetchForKey(apiKey: string, index: number, start: Date, end: Date): Promise<KeyUpstreamData | null> {
-    try {
-      const [upstream, quotas] = await Promise.all([
-        this.fetchModelUsage(apiKey, start, end),
-        this.fetchQuotaLimit(apiKey),
-      ]);
-      if (!upstream) return null;
-      return {
-        accountKeyIndex: index,
-        upstreamTokens: upstream.totalUsage.totalTokensUsage,
-        upstreamCalls: upstream.totalUsage.totalModelCallCount,
-        quotas,
-      };
-    } catch (err) {
-      console.error(`[UpstreamSync] Key #${index} 拉取失败:`, err);
-      return null;
-    }
-  }
-
-  private async fetchWithTimeout(url: string, headers: Record<string, string>): Promise<Response | null> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    try {
-      const res = await fetch(url, { headers, signal: controller.signal });
-      return res;
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        console.error(`[UpstreamSync] 请求超时: ${url}`);
-      }
-      return null;
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
-  private async fetchModelUsage(apiKey: string, start: Date, end: Date): Promise<UpstreamModelUsage | null> {
-    const fmt = (d: Date) => {
-      const p = (n: number) => String(n).padStart(2, '0');
-      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-    };
-    const url = `${this.baseUrl}/api/monitor/usage/model-usage?startTime=${encodeURIComponent(fmt(start))}&endTime=${encodeURIComponent(fmt(end))}`;
-    const res = await this.fetchWithTimeout(url, { 'Authorization': apiKey, 'Content-Type': 'application/json' });
-    if (!res) return null;
-    if (!res.ok) {
-      console.error(`[UpstreamSync] model-usage API 返回 ${res.status}`);
-      return null;
-    }
-    const json = await res.json() as { success: boolean; data: UpstreamModelUsage };
-    return json.success ? json.data : null;
-  }
-
-  private async fetchQuotaLimit(apiKey: string): Promise<QuotaLimit | null> {
-    const url = `${this.baseUrl}/api/monitor/usage/quota/limit`;
-    const res = await this.fetchWithTimeout(url, { 'Authorization': apiKey, 'Content-Type': 'application/json' });
-    if (!res) return null;
-    if (!res.ok) return null;
-    const json = await res.json() as { success: boolean; data: QuotaLimit };
-    return json.success ? json.data : null;
+    console.log(`[UpstreamSync] 用量数据已更新 | ${dateStr} | ${successCount}/${this.provider.apiKeys.length} 个 key 成功`);
   }
 }
