@@ -12,20 +12,33 @@ function parseDays(value: string | undefined): number {
   return Math.min(parsed, MAX_QUERY_DAYS);
 }
 
-export function createAdminRoutes(pool: AccountBalancer, tracker: RequestLog, calibrator: UpstreamSync) {
-  const admin = new Hono();
+// 运行时注入的依赖
+let pool: AccountBalancer;
+let tracker: RequestLog;
+let calibrator: UpstreamSync;
 
+export function initAdminDeps(
+  p: AccountBalancer,
+  t: RequestLog,
+  c: UpstreamSync
+) {
+  pool = p;
+  tracker = t;
+  calibrator = c;
+}
+
+export const adminRoutes = new Hono()
   // API 认证中间件
-  admin.use('*', async (c, next) => {
+  .use('*', async (c, next) => {
     const token = c.req.header('authorization')?.replace('Bearer ', '');
     if (!token || token !== config.adminToken) {
       return c.json({ error: 'unauthorized' }, 401);
     }
     await next();
-  });
+  })
 
   // Account pool status（含上游 token 和配额）
-  admin.get('/accounts', (c) => {
+  .get('/accounts', (c) => {
     const accounts = pool.getStatus();
     const usage = tracker.getUsageByAccount();
     const usageMap = new Map(usage.map(u => [u.accountIndex, u]));
@@ -42,29 +55,28 @@ export function createAdminRoutes(pool: AccountBalancer, tracker: RequestLog, ca
       };
     });
     return c.json({ accounts: merged });
-  });
+  })
 
   // Usage by client IP
-  admin.get('/usage', (c) => {
+  .get('/usage', (c) => {
     const days = parseDays(c.req.query('days'));
     return c.json({ usage: tracker.getUsageByIp(days) });
-  });
+  })
 
   // Overall summary
-  admin.get('/usage/summary', (c) => {
+  .get('/usage/summary', (c) => {
     const days = parseDays(c.req.query('days'));
     return c.json({
       summary: tracker.getSummary(days),
       daily: tracker.getDailyBreakdown(days),
     });
-  });
+  })
 
   // 校准数据（所有 key 的最新快照）
-  admin.get('/calibration', (c) => {
+  .get('/calibration', (c) => {
     const map = calibrator.getLatest();
     const entries = Array.from(map.values());
     return c.json({ calibration: entries });
   });
 
-  return admin;
-}
+export type AppType = typeof adminRoutes;

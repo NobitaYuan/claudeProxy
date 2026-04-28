@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
-import { createAdminRoutes } from '../../src/admin/routes.js';
+import { adminRoutes, initAdminDeps } from '../../src/admin/routes.js';
 import { config } from '../../src/config.js';
 import type { AccountBalancer } from '../../src/proxy/accountBalancer.js';
 import type { RequestLog } from '../../src/stats/requestLog.js';
@@ -44,8 +44,9 @@ function createMockCalibrator(): UpstreamSync {
 }
 
 function createTestApp(pool: AccountBalancer, tracker: RequestLog, calibrator: UpstreamSync) {
+  initAdminDeps(pool, tracker, calibrator);
   const app = new Hono();
-  app.route('/admin', createAdminRoutes(pool, tracker, calibrator));
+  app.route('/admin', adminRoutes);
   return app;
 }
 

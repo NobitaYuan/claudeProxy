@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
 import { createProvider } from './providers/index.js';
@@ -7,9 +8,10 @@ import { createProxyHandler } from './proxy/proxy.js';
 import { initDb } from './stats/database.js';
 import { RequestLog } from './stats/requestLog.js';
 import { UpstreamSync } from './stats/upstreamSync.js';
-import { createAdminRoutes } from './admin/routes.js';
+import { adminRoutes, initAdminDeps } from './admin/routes.js';
 import { DASHBOARD_HTML } from './admin/dashboard.js';
 import { eventBus } from './admin/events.js';
+import docs from './admin/docs.js';
 import { getLocalIPs } from './utils/tools.js';
 
 // 初始化
@@ -23,6 +25,9 @@ upstreamSync.start();
 const proxyHandler = createProxyHandler(accountBalancer, requestLog, provider);
 
 const app = new Hono<{ Variables: { clientIp: string } }>();
+
+// CORS
+app.use('/admin/*', cors());
 
 // 注入客户端 IP
 app.use('*', async (c, next) => {
@@ -40,8 +45,12 @@ app.get('/admin/dashboard', (c) => c.html(DASHBOARD_HTML));
 app.get('/admin/', (c) => c.redirect('/admin/dashboard'));
 app.get('/admin/events', (c) => eventBus.handler(c));
 
-// Admin API
-app.route('/admin', createAdminRoutes(accountBalancer, requestLog, upstreamSync));
+// API 文档（无需认证，必须在 adminRoutes 之前挂载）
+initAdminDeps(accountBalancer, requestLog, upstreamSync);
+app.route('/admin/docs', docs);
+
+// Admin API（需要 Bearer 认证）
+app.route('/admin', adminRoutes);
 
 // 代理：转发所有 /v1/* 请求
 app.all('/v1/*', proxyHandler);
@@ -59,6 +68,11 @@ console.log('');
 console.log('Dashboard:');
 for (const ip of ips) {
   console.log(`  http://${ip}:${config.port}/admin/dashboard`);
+}
+console.log('');
+console.log('Docs:');
+for (const ip of ips) {
+  console.log(`  http://${ip}:${config.port}/admin/docs`);
 }
 console.log('');
 console.log('Claude Code config for employees:');

@@ -5,19 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts --format esm --dts && node -e \"import('fs').then(fs => { fs.mkdirSync('dist/public', { recursive: true }); fs.copyFileSync('public/dashboard.html', 'dist/public/dashboard.html'); })\"",
+    "docs": "npx @rcmade/hono-docs generate --config ./hono-docs.ts",
+    "build": "pnpm docs && tsup src/index.ts --format esm --dts && node -e \"import('fs').then(fs => { fs.mkdirSync('dist/public', { recursive: true }); fs.copyFileSync('public/dashboard.html', 'dist/public/dashboard.html'); })\"",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.8",
+    "@scalar/hono-api-reference": "^0.10.9",
     "better-sqlite3": "^11.8.1",
     "dotenv": "^16.4.7",
     "hono": "^4.7.4"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
+    "@rcmade/hono-docs": "^1.0.32",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.13.4",
     "@vitest/coverage-v8": "^4.1.5",
